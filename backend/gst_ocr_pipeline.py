@@ -913,13 +913,23 @@ def init_db(db_path=DB_PATH) -> sqlite3.Connection:
     return conn
 
 
-def save_to_purchase_registry(record: dict, db_path=DB_PATH) -> int:
+def save_to_purchase_registry(record: dict, db_path=DB_PATH,
+                              update_existing: bool = False) -> int:
     """
-    Upsert one Purchase Registry record (header + line items) into SQLite.
-    Idempotent: re-processing the same invoice (same GSTIN + document number
-    + document type) updates the existing row instead of creating a
-    duplicate — safe to call again if a scan is re-uploaded.
-    Returns the row id.
+    Insert one Purchase Registry record (header + line items) into SQLite.
+
+    Duplicate handling (same GSTIN + document number + document type):
+      - update_existing=False (DEFAULT): the record already exists, so it is
+        LEFT UNTOUCHED — no update, no duplicate row. The existing row id is
+        returned. This is the "don't update if a duplicate is present"
+        behaviour: once an invoice is in the registry, re-processing it never
+        overwrites the stored data.
+      - update_existing=True: the existing row is overwritten with the new
+        record (the old upsert behaviour). Use this only when you deliberately
+        want a re-scan to replace what's already stored.
+
+    If the record is genuinely new it is always inserted.
+    Returns the row id (existing or newly inserted).
     """
     conn = init_db(db_path)
     try:
@@ -957,6 +967,15 @@ def save_to_purchase_registry(record: dict, db_path=DB_PATH) -> int:
 
         if existing:
             registry_id = existing[0]
+
+            # ── Duplicate present: by default do NOT update ──────────────────
+            # The invoice is already in the registry. Unless the caller
+            # explicitly asks to overwrite, leave the stored data exactly as
+            # it is and return the existing id.
+            if not update_existing:
+                conn.commit()
+                return registry_id
+
             params["id"] = registry_id
             conn.execute("""
                 UPDATE purchase_registry SET
@@ -1124,6 +1143,100 @@ def get_purchase_registry(db_path=DB_PATH, gstin: str = None, return_period: str
         conn.close()
 
 
+def load_registry_json(json_path) -> list[dict]:
+    """Load purchase registry records from a JSON file written by
+    export_registry_to_json() or process_invoices_folder()'s combined
+    purchase_registry.json. Returns a list of record dicts (or [] if the
+    file is missing or empty)."""
+    p = Path(json_path)
+    if not p.exists():
+        return []
+    try:
+        data = json.loads(p.read_text(encoding="utf-8") or "[]")
+    except (json.JSONDecodeError, OSError):
+        return []
+    # Combined files are a list; a single-invoice file may be one dict.
+    if isinstance(data, dict):
+        return [data]
+    return data if isinstance(data, list) else []
+
+
+def query_registry(source="db", db_path=DB_PATH, json_path=None,
+                   gstin: str = None, return_period: str = None,
+                   document_number: str = None, supplier_name: str = None,
+                   needs_review_only: bool = False) -> list[dict]:
+    """
+    Unified query over the purchase registry — works against the SQLite DB,
+    a purchase registry JSON file, or both, with the same filters.
+
+    This is the single entry point the reconciliation engine (or any caller)
+    can use whether the registry lives in the database or in an exported JSON
+    file, without writing separate lookup code for each.
+
+    Args:
+        source: where to read from —
+            "db"   → query the SQLite DB (default)
+            "json" → query a purchase registry JSON file (needs json_path)
+            "both" → read from both and merge, de-duplicated on
+                     (gstin_of_supplier, document_number, document_type)
+        db_path: SQLite DB path (used when source is "db" or "both")
+        json_path: JSON file path (required when source is "json" or "both")
+        gstin: filter to one supplier GSTIN (matches gstin_of_supplier)
+        return_period: filter to one tax period "MM-YYYY"
+        document_number: filter to one document/invoice number (exact match)
+        supplier_name: case-insensitive substring match on trade/legal name
+        needs_review_only: only return records flagged for human review
+
+    Returns:
+        list of record dicts (each with nested line_items), filtered.
+    """
+    def _matches(rec: dict) -> bool:
+        if gstin and rec.get("gstin_of_supplier") != gstin:
+            return False
+        if return_period and rec.get("return_period") != return_period:
+            return False
+        if document_number and rec.get("document_number") != document_number:
+            return False
+        if supplier_name:
+            name = (rec.get("trade_legal_name") or "").lower()
+            if supplier_name.lower() not in name:
+                return False
+        if needs_review_only and not rec.get("needs_review"):
+            return False
+        return True
+
+    records: list[dict] = []
+
+    if source in ("db", "both"):
+        # Let the DB do the indexed filtering it already supports, then apply
+        # the extra (document_number / supplier_name) filters in Python.
+        db_records = get_purchase_registry(
+            db_path=db_path, gstin=gstin, return_period=return_period,
+            needs_review_only=needs_review_only,
+        )
+        records.extend(r for r in db_records if _matches(r))
+
+    if source in ("json", "both"):
+        if not json_path:
+            raise ValueError("json_path is required when source is 'json' or 'both'.")
+        json_records = load_registry_json(json_path)
+        records.extend(r for r in json_records if _matches(r))
+
+    if source == "both":
+        # De-duplicate across the two sources on the natural invoice key,
+        # keeping the first occurrence (DB rows come first).
+        seen, deduped = set(), []
+        for r in records:
+            key = (r.get("gstin_of_supplier"), r.get("document_number"), r.get("document_type"))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(r)
+        records = deduped
+
+    return records
+
+
 def export_registry_to_json(out_path, db_path=DB_PATH, gstin: str = None,
                              return_period: str = None) -> str:
     """Dump the current Purchase Registry (optionally filtered) to a JSON
@@ -1274,7 +1387,8 @@ def extract_invoice(file_source, filename_hint: str = None) -> dict:
 def process_invoice_to_registry(file_source, filename_hint: str = None,
                                  type_of_inward_supply: str = None,
                                  save_to_db: bool = True, db_path=DB_PATH,
-                                 skip_if_seen: bool = True) -> dict:
+                                 skip_if_seen: bool = True,
+                                 update_existing: bool = False) -> dict:
     """
     Full pipeline for one scanned/uploaded invoice:
         invoice (file / bytes / upload stream)
@@ -1298,6 +1412,10 @@ def process_invoice_to_registry(file_source, filename_hint: str = None,
             hash is already in the DB, return the cached record immediately
             without re-parsing. Set False (or use --force on the CLI) to
             force a fresh VLM run even for previously seen files.
+        update_existing: if False (default), a record that already exists in
+            the registry (same GSTIN + document number + document type) is left
+            untouched — duplicates never overwrite stored data. Set True to
+            allow a re-scan to overwrite the existing row.
     """
     file_hash = file_data = None
 
@@ -1320,7 +1438,9 @@ def process_invoice_to_registry(file_source, filename_hint: str = None,
     record = to_purchase_registry(raw, type_of_inward_supply=type_of_inward_supply)
 
     if save_to_db:
-        record["id"] = save_to_purchase_registry(record, db_path=db_path)
+        record["id"] = save_to_purchase_registry(
+            record, db_path=db_path, update_existing=update_existing
+        )
         if file_hash:
             _save_file_hash(file_hash, record.get("source_file", ""), record["id"], db_path)
 
@@ -1334,7 +1454,8 @@ SUPPORTED_INVOICE_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff"
 def process_invoices_folder(input_dir: str = "invoices", output_dir: str = "processed_invoices",
                              save_to_db: bool = True, db_path=DB_PATH,
                              type_of_inward_supply: str = None,
-                             skip_if_seen: bool = True) -> dict:
+                             skip_if_seen: bool = True,
+                             update_existing: bool = False) -> dict:
     """
     Batch-process every PDF/JPEG/PNG invoice sitting in `input_dir`:
 
@@ -1428,6 +1549,7 @@ def process_invoices_folder(input_dir: str = "invoices", output_dir: str = "proc
                 save_to_db=save_to_db,
                 db_path=db_path,
                 skip_if_seen=False,   # already checked above — avoid double hash
+                update_existing=update_existing,
             )
         except Exception as e:
             print(f"❌ failed: {e}")
@@ -1546,12 +1668,44 @@ if __name__ == "__main__":
     parser.add_argument("--force", action="store_true",
                          help="Re-parse even if the file's SHA-256 hash is already in the DB "
                               "(overrides the default skip-if-seen behaviour)")
+    parser.add_argument("--update-existing", action="store_true",
+                         help="Overwrite a record that already exists in the registry "
+                              "(same GSTIN + document number + type). Default: duplicates are "
+                              "left untouched — never updated.")
     parser.add_argument("--inward-type", choices=["Inputs", "Capital Goods", "Input Services"],
                          help="Override the auto-classified 'Type of inward supplies'")
     parser.add_argument("--export", metavar="PATH",
                          help="After saving, export the full purchase registry (optionally filtered by --period) to this JSON file")
     parser.add_argument("--period", metavar="MM-YYYY", help="Filter --export to one tax period")
+    parser.add_argument("--query", action="store_true",
+                         help="Query mode: read records from the registry instead of parsing invoices. "
+                              "Combine with --from, --gstin, --doc-no, --supplier, --period, --review-only.")
+    parser.add_argument("--from", dest="query_source", choices=["db", "json", "both"], default="db",
+                         help="Query source: db (default), json (needs --json-path), or both")
+    parser.add_argument("--json-path", help="Purchase registry JSON file to query (for --from json/both)")
+    parser.add_argument("--gstin", help="Query filter: supplier GSTIN")
+    parser.add_argument("--doc-no", help="Query filter: document/invoice number (exact match)")
+    parser.add_argument("--supplier", help="Query filter: supplier trade/legal name (substring match)")
+    parser.add_argument("--review-only", action="store_true",
+                         help="Query filter: only records flagged needs_review")
     args = parser.parse_args()
+
+    # ── Query mode: read from the registry (DB / JSON / both) and exit ─────────
+    if args.query:
+        records = query_registry(
+            source=args.query_source, db_path=args.db, json_path=args.json_path,
+            gstin=args.gstin, return_period=args.period, document_number=args.doc_no,
+            supplier_name=args.supplier, needs_review_only=args.review_only,
+        )
+        output = json.dumps(records, ensure_ascii=False, indent=2)
+        if args.out:
+            Path(args.out).write_text(output, encoding="utf-8")
+            print(f"{len(records)} record(s) → {args.out}")
+        else:
+            print(output)
+            print(f"\n{len(records)} record(s) found.")
+        raise SystemExit(0)
+
 
     target = Path(args.file)
 
@@ -1574,6 +1728,7 @@ if __name__ == "__main__":
             db_path=args.db,
             type_of_inward_supply=args.inward_type,
             skip_if_seen=not args.force,
+            update_existing=args.update_existing,
         )
     elif args.excel or args.file.lower().endswith((".xlsx", ".xls")):
         result = parse_gstr2b_excel(args.file)
@@ -1586,6 +1741,7 @@ if __name__ == "__main__":
             save_to_db=not args.no_save,
             db_path=args.db,
             skip_if_seen=not args.force,
+            update_existing=args.update_existing,
         )
         if not args.no_save:
             print(f"✅ Saved to purchase registry → {args.db}  "
