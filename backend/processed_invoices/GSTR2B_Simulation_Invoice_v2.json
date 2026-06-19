@@ -1,0 +1,64 @@
+{
+  "gstin_of_supplier": "27AADCO1234C1ZD",
+  "trade_legal_name": "KLEOS Tech Solutions Pvt Ltd",
+  "type_of_inward_supply": "Input Services",
+  "document_type": "Invoice",
+  "document_number": "INV-2026-0619-B",
+  "document_date": "19-Jun-2026",
+  "taxable_value": "€230000.00",
+  "integrated_tax": "€41400.00",
+  "central_tax": "€0.00",
+  "state_ut_tax": "€0.00",
+  "cess": "€0.00",
+  "buyer_gstin": "29AAC01234C1ZS",
+  "place_of_supply": "Inter-State (B2B)",
+  "grand_total": "€271400.00",
+  "confidence": {
+    "overall": 0.9
+  },
+  "source_file": "GSTR2B_Simulation_Invoice_v2.pdf",
+  "return_period": "06-2026",
+  "line_items": [
+    {
+      "sr": "1",
+      "description": "Enterprise Cloud API License Annual",
+      "hsn_code": "",
+      "quantity": "",
+      "unit": "",
+      "rate": "21800.00",
+      "taxable_amount": "€120000.00",
+      "gst_rate": "0.00",
+      "gst_amount": "€0.00",
+      "total": "0.00"
+    },
+    {
+      "sr": "2",
+      "description": "Machine Learning Model Fine-Tuning Service",
+      "hsn_code": "",
+      "quantity": "",
+      "unit": "",
+      "rate": "15300.00",
+      "taxable_amount": "€85000.00",
+      "gst_rate": "0.00",
+      "gst_amount": "€0.00",
+      "total": "0.00"
+    },
+    {
+      "sr": "3",
+      "description": "Priority Technical Support (SLA Tier 1)",
+      "hsn_code": "",
+      "quantity": "",
+      "unit": "",
+      "rate": "4500.00",
+      "taxable_amount": "€25000.00",
+      "gst_rate": "0.00",
+      "gst_amount": "€0.00",
+      "total": "0.00"
+    }
+  ],
+  "warnings": [
+    "Taxable value is missing or zero."
+  ],
+  "extracted_at": "2026-06-19T18:34:33.090034Z",
+  "id": 2
+}

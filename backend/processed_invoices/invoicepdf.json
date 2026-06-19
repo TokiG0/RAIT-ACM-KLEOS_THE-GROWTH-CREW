@@ -1,0 +1,53 @@
+{
+  "gstin_of_supplier": "2AHDE7487RE5RT4",
+  "trade_legal_name": "GUJARAT FREIGHT TOOLS",
+  "type_of_inward_supply": "Inputs",
+  "document_type": "Bill of Supply",
+  "document_number": "201",
+  "document_date": "05-Mar-2026",
+  "taxable_value": "3380.00",
+  "integrated_tax": "0.00",
+  "central_tax": "606.40",
+  "state_ut_tax": "606.40",
+  "cess": "0.00",
+  "buyer_gstin": "",
+  "place_of_supply": "Delhi (CST)",
+  "grand_total": "3988.00",
+  "confidence": {
+    "overall": 0.9
+  },
+  "source_file": "invoicepdf.pdf",
+  "return_period": "03-2026",
+  "line_items": [
+    {
+      "sr": "1",
+      "description": "Stanley Hammer (Claw Hammer Steel Shaft Black and Chrome)",
+      "hsn_code": "82030200",
+      "quantity": "3.00 PCS",
+      "unit": "",
+      "rate": "499.00",
+      "taxable_amount": "1497.00",
+      "gst_rate": "18.00",
+      "gst_amount": "269.46",
+      "total": "1766.46"
+    },
+    {
+      "sr": "2",
+      "description": "Angle Die Saw (60 mm 450 W)",
+      "hsn_code": "8202",
+      "quantity": "1.00 PCS",
+      "unit": "",
+      "rate": "1883.00",
+      "taxable_amount": "1883.00",
+      "gst_rate": "18.00",
+      "gst_amount": "336.94",
+      "total": "2219.94"
+    }
+  ],
+  "warnings": [
+    "Line items GST sum (606.40) does not match header GST total (1212.80) — possible OCR error.",
+    "GSTIN of supplier is missing or invalid."
+  ],
+  "extracted_at": "2026-06-19T22:07:10.993360Z",
+  "id": 13
+}

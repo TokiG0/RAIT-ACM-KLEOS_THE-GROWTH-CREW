@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Send, FileSpreadsheet, Copy, Check, MessageSquare, AlertCircle, Sparkles } from 'lucide-react';
 import { TRANSLATIONS } from '../utils/translations';
-import { SAMPLE_SUPPLIERS, convertToCSV } from '../utils/dummyData';
+import { convertToCSV } from '../utils/csvHelper';
 
 export default function ActionCenter({ reconciledData, currentLang }) {
   const t = TRANSLATIONS[currentLang];
@@ -24,11 +24,7 @@ export default function ActionCenter({ reconciledData, currentLang }) {
   // Draft WhatsApp Messages
   const generateWhatsAppMessage = (item) => {
     const inv = item.purchase;
-    const supplier = Object.values(SAMPLE_SUPPLIERS).find(
-      s => s.gstin.toLowerCase() === inv.supplierGstin.toLowerCase()
-    ) || { name: inv.supplierName, phone: "" };
-    
-    const supplierName = supplier.name.split(" ")[0]; // First name
+    const supplierName = (inv.supplierName || "Supplier").split(" ")[0]; // First name
     const itcAmount = (inv.cgst || 0) + (inv.sgst || 0) + (inv.igst || 0);
 
     if (currentLang === 'hi') {
@@ -87,12 +83,10 @@ export default function ActionCenter({ reconciledData, currentLang }) {
 
   const handleWhatsAppOpen = (item, msg) => {
     const inv = item.purchase;
-    const supplier = Object.values(SAMPLE_SUPPLIERS).find(
-      s => s.gstin.toLowerCase() === inv.supplierGstin.toLowerCase()
-    ) || { phone: "9876543210" };
+    const supplierPhone = inv.supplierPhone || "9876543210";
     
     const encodedMsg = encodeURIComponent(msg);
-    const url = `https://api.whatsapp.com/send?phone=91${supplier.phone}&text=${encodedMsg}`;
+    const url = `https://api.whatsapp.com/send?phone=91${supplierPhone}&text=${encodedMsg}`;
     window.open(url, '_blank');
   };
 

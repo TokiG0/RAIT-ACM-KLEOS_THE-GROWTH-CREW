@@ -1,0 +1,79 @@
+{
+  "gstin_of_supplier": "33CBCH12344EZU",
+  "trade_legal_name": "ANAND NIKETAN COOPERATIVE HOUSING SOCIETY LIMITED",
+  "type_of_inward_supply": "Inputs",
+  "document_type": "Bill of Supply",
+  "document_number": "",
+  "document_date": "09-Dec-2023",
+  "taxable_value": "0.00",
+  "integrated_tax": "0.00",
+  "central_tax": "191.50",
+  "state_ut_tax": "191.50",
+  "cess": "85.00",
+  "buyer_gstin": "GSTRN",
+  "place_of_supply": "Tamil Nadu (33)",
+  "grand_total": "334.00",
+  "confidence": {
+    "overall": 0.9
+  },
+  "source_file": "pdfinvoice.pdf",
+  "return_period": "12-2023",
+  "line_items": [
+    {
+      "sr": "I",
+      "description": "All other ITC - Supplies from registered persons",
+      "hsn_code": "",
+      "quantity": "",
+      "unit": "",
+      "rate": "0.00",
+      "taxable_amount": "0.00",
+      "gst_rate": "4(4)(5)",
+      "gst_amount": "191.50",
+      "total": "191.50"
+    },
+    {
+      "sr": "II",
+      "description": "Inward Supplies from ISD",
+      "hsn_code": "",
+      "quantity": "",
+      "unit": "",
+      "rate": "0.00",
+      "taxable_amount": "0.00",
+      "gst_rate": "4(4)(4)",
+      "gst_amount": "0.00",
+      "total": "0.00"
+    },
+    {
+      "sr": "III",
+      "description": "Inward Supplies liable for reverse charge",
+      "hsn_code": "",
+      "quantity": "",
+      "unit": "",
+      "rate": "0.00",
+      "taxable_amount": "0.00",
+      "gst_rate": "3(1)(d)",
+      "gst_amount": "0.00",
+      "total": "0.00"
+    },
+    {
+      "sr": "IV",
+      "description": "Import of Goods",
+      "hsn_code": "",
+      "quantity": "",
+      "unit": "",
+      "rate": "0.00",
+      "taxable_amount": "0.00",
+      "gst_rate": "4(4)(1)",
+      "gst_amount": "0.00",
+      "total": "0.00"
+    }
+  ],
+  "warnings": [
+    "GSTIN of supplier is missing or invalid.",
+    "Line items GST sum (191.50) does not match header GST total (468.00) — possible OCR error.",
+    "Document number is missing.",
+    "Taxable value is missing or zero."
+  ],
+  "extracted_at": "2026-06-19T20:21:37.882363Z",
+  "id": 9
+}

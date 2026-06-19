@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Upload, FileSpreadsheet, ArrowRight, Download, Check, RefreshCw, AlertCircle } from 'lucide-react';
 import { TRANSLATIONS } from '../utils/translations';
-import { downloadGstr2bCsv, downloadPurchasesCsv, parseCSV, DUMMY_GSTR2B, DUMMY_PURCHASES } from '../utils/dummyData';
+import { downloadGstr2bTemplateCsv, downloadPurchasesTemplateCsv, parseCSV } from '../utils/csvHelper';
 import { parseGstr2bExcel } from '../utils/api';
 
 export default function Gstr2bImport({ 
@@ -9,23 +9,12 @@ export default function Gstr2bImport({
   purchaseRecords, 
   onLoadGstr, 
   onLoadPurchases, 
-  onLoadDemoData, 
   currentLang,
   backendActive
 }) {
   const t = TRANSLATIONS[currentLang];
-  const [loadingDemo, setLoadingDemo] = useState(false);
   const [dragActive, setDragActive] = useState({ gstr: false, purchase: false });
   const [excelError, setExcelError] = useState(null);
-
-  // Load demo datasets instantly
-  const handleLoadDemo = () => {
-    setLoadingDemo(true);
-    setTimeout(() => {
-      onLoadDemoData();
-      setLoadingDemo(false);
-    }, 800); // Aesthetic simulation delay
-  };
 
   const handleExcelUpload = async (file, type) => {
     if (type !== 'gstr') {
@@ -123,30 +112,6 @@ export default function Gstr2bImport({
 
   return (
     <div className="import-view-container">
-      {/* Load Demo Section */}
-      <div className="demo-data-section glass-panel">
-        <div className="demo-info">
-          <h3>{t.loadPresetsBtn}</h3>
-          <p className="text-secondary">{t.loadPresetsDesc}</p>
-        </div>
-        <button 
-          className="btn-primary flex-center" 
-          onClick={handleLoadDemo}
-          disabled={loadingDemo}
-        >
-          {loadingDemo ? (
-            <>
-              <RefreshCw className="animate-spin mr-8" size={18} />
-              <span>Loading...</span>
-            </>
-          ) : (
-            <>
-              <FileSpreadsheet size={18} className="mr-8" />
-              <span>{t.loadPresetsBtn}</span>
-            </>
-          )}
-        </button>
-      </div>
 
       {/* Grid of File Ingestion */}
       <div className="import-grid">
@@ -197,7 +162,7 @@ export default function Gstr2bImport({
             </div>
           )}
 
-          <button className="btn-secondary flex-center" onClick={downloadGstr2bCsv}>
+          <button className="btn-secondary flex-center" onClick={downloadGstr2bTemplateCsv}>
             <Download size={16} className="mr-8" />
             <span>{t.downloadDummyBtn}</span>
           </button>
@@ -238,7 +203,7 @@ export default function Gstr2bImport({
             />
           </div>
 
-          <button className="btn-secondary flex-center" onClick={downloadPurchasesCsv}>
+          <button className="btn-secondary flex-center" onClick={downloadPurchasesTemplateCsv}>
             <Download size={16} className="mr-8" />
             <span>{t.downloadPurchasesBtn}</span>
           </button>

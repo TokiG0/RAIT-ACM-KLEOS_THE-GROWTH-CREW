@@ -1,0 +1,65 @@
+{
+  "gstin_of_supplier": "27AADC1234P1ZD",
+  "trade_legal_name": "KLEOS Tech Solutions Pvt Ltd",
+  "type_of_inward_supply": "Inputs",
+  "document_type": "Bill of Supply",
+  "document_number": "INV-2026-0619-A",
+  "document_date": "19-Jun-2026",
+  "taxable_value": "82000.00",
+  "integrated_tax": "0.00",
+  "central_tax": "7380.00",
+  "state_ut_tax": "7380.00",
+  "cess": "0.00",
+  "buyer_gstin": "27BBDPR0950Z2Z",
+  "place_of_supply": "Navi Mumbai, Maharashtra, 400708",
+  "grand_total": "96760.00",
+  "confidence": {
+    "overall": 0.9
+  },
+  "source_file": "GSTR2B_Simulation_Invoice.pdf",
+  "return_period": "06-2026",
+  "line_items": [
+    {
+      "sr": "1",
+      "description": "Enterprise Server Rack (4U)",
+      "hsn_code": "",
+      "quantity": "",
+      "unit": "",
+      "rate": "0.00",
+      "taxable_amount": "45000.00",
+      "gst_rate": "4.05%",
+      "gst_amount": "4050.00",
+      "total": "0.00"
+    },
+    {
+      "sr": "2",
+      "description": "Cisco Managed Switch 24-Port",
+      "hsn_code": "",
+      "quantity": "",
+      "unit": "",
+      "rate": "0.00",
+      "taxable_amount": "25000.00",
+      "gst_rate": "2.25%",
+      "gst_amount": "2250.00",
+      "total": "0.00"
+    },
+    {
+      "sr": "3",
+      "description": "Cloud Storage Expansion (1TB)",
+      "hsn_code": "",
+      "quantity": "",
+      "unit": "",
+      "rate": "0.00",
+      "taxable_amount": "12000.00",
+      "gst_rate": "1.08%",
+      "gst_amount": "1080.00",
+      "total": "0.00"
+    }
+  ],
+  "warnings": [
+    "GSTIN of supplier is missing or invalid.",
+    "Line items GST sum (7380.00) does not match header GST total (14760.00) — possible OCR error."
+  ],
+  "extracted_at": "2026-06-19T20:06:41.575877Z",
+  "id": 1
+}

@@ -30,10 +30,12 @@ export async function checkBackendHealth() {
 /**
  * Uploads a real invoice (PDF, JPEG, PNG) to the OCR extraction pipeline
  * @param {File} file - The file object from input change
+ * @param {string} ocrMode - The chosen OCR mode ('sandbox' or 'vlm')
  */
-export async function uploadInvoice(file) {
+export async function uploadInvoice(file, ocrMode = 'sandbox') {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('ocr_mode', ocrMode);
 
   const res = await fetch(`${API_BASE}/upload-invoice`, {
     method: 'POST',
@@ -113,3 +115,20 @@ export async function runRules(invoiceData) {
 
   return await res.json();
 }
+
+/**
+ * Deletes a purchase record from the database by ID
+ */
+export async function deletePurchaseRecord(recordId) {
+  const res = await fetch(`${API_BASE}/purchase-registry/${recordId}`, {
+    method: 'DELETE'
+  });
+
+  if (!res.ok) {
+    const errData = await res.json();
+    throw new Error(errData.error || 'Failed to delete purchase record');
+  }
+
+  return await res.json();
+}
+

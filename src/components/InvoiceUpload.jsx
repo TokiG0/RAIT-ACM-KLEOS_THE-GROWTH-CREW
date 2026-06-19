@@ -1,99 +1,23 @@
 import React, { useState } from 'react';
 import { Camera, FileText, Check, AlertCircle, RefreshCw } from 'lucide-react';
 import { TRANSLATIONS } from '../utils/translations';
-import { SAMPLE_SUPPLIERS } from '../utils/dummyData';
 import { uploadInvoice } from '../utils/api';
 
 export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backendActive }) {
   const t = TRANSLATIONS[currentLang];
+  const ocrMode = 'vlm'; // local Qwen VLM is the only engine
   const [scanning, setScanning] = useState(false);
   const [scanStep, setScanStep] = useState(0);
   const [scannedBill, setScannedBill] = useState(null);
-  const [activePreset, setActivePreset] = useState(null);
   const [added, setAdded] = useState(false);
   const [uploadingError, setUploadingError] = useState(null);
 
-  // Sample Bills visual data for preview
-  const PRESET_BILLS = [
-    {
-      id: 'milk',
-      title: t.scanDemo1,
-      supplierName: SAMPLE_SUPPLIERS.NITIN_DAIRY.name,
-      supplierGstin: SAMPLE_SUPPLIERS.NITIN_DAIRY.gstin,
-      invoiceNumber: "INV-002",
-      invoiceDate: "2026-06-02",
-      hsnCode: "0401", // Correct Milk HSN
-      taxableValue: 15000,
-      gstRate: 5,
-      cgst: 375,
-      sgst: 375,
-      igst: 0,
-      totalAmount: 15750,
-      // Scenario mismatch details
-      status: "MISMATCH_HSN",
-      explanation: "HSN Mismatch: Supplier uploaded HSN as 9987 (Services, blocked credit) in GSTR-2B. Purchase invoice requires HSN 0401. Double check with supplier.",
-      explanationHi: "एचएसएन में अंतर: सप्लायर ने GSTR-2B में 9987 (सर्विस, ब्लॉक क्रेडिट) डाला है। बिल में 0401 (दूध) होना चाहिए। सप्लायर से बात करें।",
-      explanationHing: "HSN code galat hai. Supplier ne portal par 9987 (Service, blocked ITC) dala hai, par bill me 0401 (Milk) hai. Supplier se correct karayein."
-    },
-    {
-      id: 'soap',
-      title: t.scanDemo2,
-      supplierName: SAMPLE_SUPPLIERS.GUPTA_SOAP.name,
-      supplierGstin: SAMPLE_SUPPLIERS.GUPTA_SOAP.gstin,
-      invoiceNumber: "INV-004",
-      invoiceDate: "2026-06-06",
-      hsnCode: "3401",
-      taxableValue: 8000,
-      gstRate: 18,
-      cgst: 720,
-      sgst: 720,
-      igst: 0,
-      totalAmount: 9440,
-      status: "SUPPLIER_DEFAULT",
-      explanation: "Supplier Default: This invoice is completely missing from your GSTR-2B. You cannot claim ₹1,440 ITC until they upload it.",
-      explanationHi: "सप्लायर डिफ़ॉल्ट: यह इनवॉइस आपके GSTR-2B में नहीं है। सप्लायर के अपलोड करने तक आप ₹1,440 का टैक्स लाभ नहीं ले सकते।",
-      explanationHing: "Missing in GSTR-2B. Supplier ne upload nahi kiya hai. Jab tak upload nahi karenge, aap ₹1,440 ITC claim nahi kar sakte."
-    },
-    {
-      id: 'paper',
-      title: t.scanDemo3,
-      supplierName: SAMPLE_SUPPLIERS.KARAN_PAPER.name,
-      supplierGstin: SAMPLE_SUPPLIERS.KARAN_PAPER.gstin,
-      invoiceNumber: "INV-005",
-      invoiceDate: "2026-06-10",
-      hsnCode: "4802",
-      taxableValue: 30000,
-      gstRate: 12,
-      cgst: 1800,
-      sgst: 1800,
-      igst: 0,
-      totalAmount: 33600,
-      status: "MISMATCH_GSTIN",
-      explanation: "GSTIN Error: Supplier uploaded this bill under a different GSTIN (09AAAAC4451M1Z2 instead of your GSTIN 09AAAAC4451M1Z1). Ask them to amend GSTR-1.",
-      explanationHi: "गलत जीएसटी नंबर: सप्लायर ने यह बिल दूसरे GSTIN (09AAAAC4451M1Z2) पर चढ़ा दिया है। सुधार के लिए उनसे कहें।",
-      explanationHing: "GSTIN Match nahi hai. Supplier ne portal par galat GSTIN (09AAAAC4451M1Z2) par upload kar diya hai. Unhe theek karne ko bole."
-    }
-  ];
+  // States to keep track of the actual uploaded file preview
+  const [uploadedFileUrl, setUploadedFileUrl] = useState(null);
+  const [uploadedFileType, setUploadedFileType] = useState(null);
+  const [resultTab, setResultTab] = useState('form'); // 'form' or 'json'
 
-  const triggerScan = (preset) => {
-    setActivePreset(preset);
-    setScanning(true);
-    setScanStep(0);
-    setAdded(false);
-    
-    // Aesthetic multi-step scanning sequence
-    const interval = setInterval(() => {
-      setScanStep(prev => {
-        if (prev >= 2) {
-          clearInterval(interval);
-          setScanning(false);
-          setScannedBill(preset);
-          return 2;
-        }
-        return prev + 1;
-      });
-    }, 1200);
-  };
+
 
   const handleRealFileUpload = async (file) => {
     setScanning(true);
@@ -102,15 +26,25 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
     setUploadingError(null);
     setScannedBill(null);
 
+    // Create file preview URL
+    try {
+      const url = URL.createObjectURL(file);
+      setUploadedFileUrl(url);
+      setUploadedFileType(file.type);
+    } catch (e) {
+      console.error("Failed to generate file preview:", e);
+    }
+
     // Dynamic scanning progress steps
+    const maxSteps = 3;
     const stepInterval = setInterval(() => {
-      setScanStep(prev => (prev < 2 ? prev + 1 : prev));
-    }, 1200);
+      setScanStep(prev => (prev < maxSteps ? prev + 1 : prev));
+    }, 2500);
 
     try {
-      const response = await uploadInvoice(file);
+      const response = await uploadInvoice(file, ocrMode);
       clearInterval(stepInterval);
-      setScanStep(2);
+      setScanStep(maxSteps);
       
       const mappedBill = {
         id: response.id || `scanned-${response.document_number}`,
@@ -139,15 +73,89 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
       setScannedBill(mappedBill);
     } catch (err) {
       clearInterval(stepInterval);
-      setUploadingError(err.message || "Failed to upload and parse invoice.");
+      if (err.name === 'TypeError' || err.message.includes('fetch')) {
+        setUploadingError("Backend server offline. Please start the Python backend (python backend/server.py) to enable real-time VLM parsing.");
+      } else {
+        setUploadingError(err.message || "Failed to upload and parse invoice.");
+      }
     } finally {
       setScanning(false);
     }
   };
 
-  const handleAddToPurchases = () => {
+  const handleFieldChange = (key, value) => {
+    setScannedBill(prev => {
+      if (!prev) return null;
+      const updated = { ...prev, [key]: value };
+      
+      // Auto-recalculate totals if amounts are edited
+      if (key === 'taxableValue' || key === 'cgst' || key === 'sgst' || key === 'igst') {
+        const taxable = parseFloat(updated.taxableValue || 0);
+        const cgst = parseFloat(updated.cgst || 0);
+        const sgst = parseFloat(updated.sgst || 0);
+        const igst = parseFloat(updated.igst || 0);
+        updated.totalAmount = parseFloat((taxable + cgst + sgst + igst).toFixed(2));
+      }
+      return updated;
+    });
+  };
+
+  const handleAddToPurchases = async () => {
     if (!scannedBill) return;
-    onAddScannedPurchase(scannedBill);
+
+    if (backendActive && scannedBill.id && !String(scannedBill.id).startsWith('scanned-')) {
+      try {
+        // Confirm manual changes to SQLite DB before adding to React purchases list
+        const response = await fetch(`http://localhost:5000/api/purchase-registry/${scannedBill.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            supplierName: scannedBill.supplierName,
+            supplierGstin: scannedBill.supplierGstin,
+            invoiceNumber: scannedBill.invoiceNumber,
+            invoiceDate: scannedBill.invoiceDate,
+            hsnCode: scannedBill.hsnCode,
+            taxableValue: scannedBill.taxableValue,
+            cgst: scannedBill.cgst,
+            sgst: scannedBill.sgst,
+            igst: scannedBill.igst,
+            totalAmount: scannedBill.totalAmount,
+            line_items: [
+              {
+                sr: "1",
+                description: "Goods / Supplies",
+                hsn_code: scannedBill.hsnCode,
+                taxable_amount: String(scannedBill.taxableValue),
+                gst_rate: String(scannedBill.gstRate) + "%",
+                gst_amount: String(scannedBill.cgst + scannedBill.sgst + scannedBill.igst),
+                total: String(scannedBill.totalAmount)
+              }
+            ]
+          })
+        });
+
+        if (response.ok) {
+          const updated = await response.json();
+          const finalBill = {
+            ...scannedBill,
+            status: updated.needs_review ? "NEEDS_REVIEW" : "MATCHED",
+            explanation: updated.warnings && updated.warnings.length > 0
+              ? `Compliance Issues: ${updated.warnings.join('. ')}`
+              : "No compliance issues found. Calculation math balances."
+          };
+          onAddScannedPurchase(finalBill);
+        } else {
+          onAddScannedPurchase(scannedBill);
+        }
+      } catch (err) {
+        console.error("Failed to save edited details in DB:", err);
+        onAddScannedPurchase(scannedBill);
+      }
+    } else {
+      onAddScannedPurchase(scannedBill);
+    }
     setAdded(true);
   };
 
@@ -168,6 +176,16 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
     return bill.explanation;
   };
 
+  const getScanningText = () => {
+    switch(scanStep) {
+      case 0: return "Initializing GPU & loading Qwen2.5-VL neural weights (may take 2-5 mins on first run)...";
+      case 1: return "Resizing image & optimizing tile grid budget...";
+      case 2: return "Running vision-language model (Qwen2.5-VL) inference...";
+      case 3: return "Formatting structured JSON and running CA rules audit...";
+      default: return "Processing...";
+    }
+  };
+
   return (
     <div className="ocr-upload-container">
       <div className="ocr-layout-grid">
@@ -176,29 +194,37 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
           <h3>{t.scanTitle}</h3>
           <p className="text-secondary">{t.scanSubtitle}</p>
 
-          {/* Fake Image Drop Area */}
+          {/* Real-time neural engine active info */}
+          <div className="alert alert-yellow p-12 mb-16" style={{
+            backgroundColor: 'var(--primary-glow)',
+            color: 'var(--primary-dim)',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--primary)',
+            fontSize: '12px',
+            lineHeight: '1.4'
+          }}>
+            <AlertCircle size={16} style={{ display: 'inline-block', marginRight: '6px', verticalAlign: 'middle' }} />
+            <strong>Real-time Neural Engine Active:</strong> Using local `Qwen2.5-VL-7B` model for structured OCR. First scan will download and load model weights (~4.5 GB) into VRAM.
+          </div>
+
+          {/* Image Drop Area - ALWAYS accepts file clicks */}
           <div 
             className="ocr-dropzone"
-            onClick={() => {
-              if (!backendActive) {
-                triggerScan(PRESET_BILLS[Math.floor(Math.random() * PRESET_BILLS.length)]);
-              }
-            }}
             style={{ position: 'relative' }}
           >
-            {backendActive && (
-              <input 
-                type="file" 
-                accept=".pdf,image/*" 
-                className="file-input-hidden" 
-                onChange={(e) => {
-                  const file = e.target.files[0];
-                  if (file) handleRealFileUpload(file);
-                }} 
-              />
-            )}
+            <input 
+              type="file" 
+              accept=".pdf,image/*" 
+              className="file-input-hidden" 
+              onChange={(e) => {
+                const file = e.target.files[0];
+                if (file) {
+                  handleRealFileUpload(file);
+                }
+              }} 
+            />
             <Camera size={48} className="text-primary-dim animate-pulse" />
-            <p>{backendActive ? "Drag & drop or Click to upload invoice" : t.scanDragDrop}</p>
+            <p>Drag & drop or Click to upload invoice</p>
             <span className="text-small text-secondary">(Accepts JPEG, PNG, PDF receipts)</span>
           </div>
 
@@ -214,23 +240,7 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
             </div>
           )}
 
-          {/* Preset Buttons */}
-          <div className="ocr-presets-container">
-            <h4>{t.scanDemoHeader}</h4>
-            <p className="text-small text-secondary">{t.scanDemoDesc}</p>
-            <div className="presets-list">
-              {PRESET_BILLS.map(preset => (
-                <button 
-                  key={preset.id}
-                  className={`btn-preset ${activePreset?.id === preset.id ? 'active' : ''}`}
-                  onClick={() => triggerScan(preset)}
-                >
-                  <FileText size={16} className="mr-8" />
-                  <span>{preset.title}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+
         </div>
 
         {/* Live Scan Results & Visuals */}
@@ -251,13 +261,9 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
                 </div>
               </div>
               
-              <div className="scanning-status-text">
-                <RefreshCw className="animate-spin text-primary mr-8" size={18} />
-                <span>
-                  {scanStep === 0 && t.scanningProgress}
-                  {scanStep === 1 && t.extractingGSTIN}
-                  {scanStep === 2 && t.matchingPortal}
-                </span>
+              <div className="scanning-status-text" style={{ textAlign: 'center', padding: '0 20px', maxWidth: '360px' }}>
+                <RefreshCw className="animate-spin text-primary mr-8" size={18} style={{ display: 'inline-block', verticalAlign: 'middle' }} />
+                <span>{getScanningText()}</span>
               </div>
             </div>
           )}
@@ -272,65 +278,260 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
               </div>
 
               <div className="scan-report-grid">
-                {/* Visual Bill Preview (HTML formatted Receipt) */}
-                <div className="bill-preview-paper">
-                  <div className="receipt-border-top"></div>
-                  <div className="receipt-content">
-                    <div className="receipt-org-name">{scannedBill.supplierName}</div>
-                    <div className="receipt-org-gstin">GSTIN: {scannedBill.supplierGstin}</div>
-                    <div className="receipt-divider"></div>
-                    <div className="receipt-row">
-                      <span>Inv No: {scannedBill.invoiceNumber}</span>
-                      <span>Date: {scannedBill.invoiceDate}</span>
-                    </div>
-                    <div className="receipt-divider"></div>
-                    <div className="receipt-table-header">
-                      <span>Item / HSN</span>
-                      <span>Total</span>
-                    </div>
-                    <div className="receipt-table-row">
-                      <span>Goods (HSN: {scannedBill.hsnCode})</span>
-                      <span>₹{scannedBill.taxableValue}</span>
-                    </div>
-                    <div className="receipt-divider"></div>
-                    <div className="receipt-row text-right">
-                      <span>Tax ({scannedBill.gstRate}%):</span>
-                      <span>₹{(scannedBill.cgst + scannedBill.sgst + scannedBill.igst)}</span>
-                    </div>
-                    <div className="receipt-row text-right text-bold">
-                      <span>Grand Total:</span>
-                      <span>₹{scannedBill.totalAmount}</span>
-                    </div>
-                  </div>
-                  <div className="receipt-border-bottom"></div>
+                {/* Visual Bill Preview (HTML formatted Receipt OR actual uploaded file) */}
+                <div className="bill-preview-paper" style={{ padding: '0', background: 'transparent', boxShadow: 'none' }}>
+                  {uploadedFileUrl ? (
+                    uploadedFileType?.startsWith('image/') ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div className="text-secondary text-small font-bold" style={{ fontSize: '11px', letterSpacing: '0.05em' }}>UPLOADED IMAGE</div>
+                        <img 
+                          src={uploadedFileUrl} 
+                          alt="Uploaded Invoice" 
+                          style={{ 
+                            width: '100%', 
+                            maxHeight: '320px', 
+                            objectFit: 'contain', 
+                            borderRadius: 'var(--radius-sm)', 
+                            border: '1px solid var(--border-color)',
+                            background: '#FFFFFF'
+                          }} 
+                        />
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div className="text-secondary text-small font-bold" style={{ fontSize: '11px', letterSpacing: '0.05em' }}>UPLOADED PDF DOCUMENT</div>
+                        <div style={{ 
+                          width: '100%', 
+                          height: '320px', 
+                          borderRadius: 'var(--radius-sm)', 
+                          border: '1px solid var(--border-color)',
+                          background: 'rgba(255,255,255,0.02)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '12px'
+                        }}>
+                          <FileText size={48} className="text-primary-dim" />
+                          <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>PDF Invoice Document</span>
+                          <a 
+                            href={uploadedFileUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="btn-preset" 
+                            style={{ padding: '6px 12px', fontSize: '11px', textDecoration: 'none' }}
+                          >
+                            Open PDF in New Tab
+                          </a>
+                        </div>
+                      </div>
+                    )
+                  ) : null}
                 </div>
 
-                {/* Extracted JSON values */}
-                <div className="extracted-fields-box">
-                  <div className="field-row">
-                    <span className="field-label">{t.invoiceNumLabel}</span>
-                    <span className="field-value highlight">{scannedBill.invoiceNumber}</span>
+                {/* Right Panel: Form Editor or Raw JSON */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {/* Tab Selector */}
+                  <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+                    <button
+                      type="button"
+                      className={`filter-btn ${resultTab === 'form' ? 'active' : ''}`}
+                      onClick={() => setResultTab('form')}
+                      style={{ padding: '6px 12px', fontSize: '12px', borderRadius: '4px' }}
+                    >
+                      Form Editor
+                    </button>
+                    <button
+                      type="button"
+                      className={`filter-btn ${resultTab === 'json' ? 'active' : ''}`}
+                      onClick={() => setResultTab('json')}
+                      style={{ padding: '6px 12px', fontSize: '12px', borderRadius: '4px' }}
+                    >
+                      Raw JSON
+                    </button>
                   </div>
-                  <div className="field-row">
-                    <span className="field-label">{t.dateLabel}</span>
-                    <span className="field-value">{scannedBill.invoiceDate}</span>
-                  </div>
-                  <div className="field-row">
-                    <span className="field-label">{t.gstinLabel}</span>
-                    <span className="field-value">{scannedBill.supplierGstin}</span>
-                  </div>
-                  <div className="field-row">
-                    <span className="field-label">{t.hsnLabel}</span>
-                    <span className="field-value highlight-yellow">{scannedBill.hsnCode}</span>
-                  </div>
-                  <div className="field-row">
-                    <span className="field-label">{t.amountLabel}</span>
-                    <span className="field-value">₹{scannedBill.taxableValue}</span>
-                  </div>
-                  <div className="field-row">
-                    <span className="field-label">{t.taxLabel}</span>
-                    <span className="field-value">₹{(scannedBill.cgst + scannedBill.sgst + scannedBill.igst)}</span>
-                  </div>
+
+                  {resultTab === 'form' ? (
+                    <div className="extracted-fields-box" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div className="field-row">
+                        <span className="field-label">{t.invoiceNumLabel}</span>
+                        <input 
+                          type="text" 
+                          value={scannedBill.invoiceNumber}
+                          onChange={(e) => handleFieldChange('invoiceNumber', e.target.value)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--primary-dim)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            textAlign: 'right',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            width: '130px'
+                          }}
+                        />
+                      </div>
+                      <div className="field-row">
+                        <span className="field-label">{t.dateLabel}</span>
+                        <input 
+                          type="text" 
+                          value={scannedBill.invoiceDate}
+                          onChange={(e) => handleFieldChange('invoiceDate', e.target.value)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--text-primary)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            textAlign: 'right',
+                            fontSize: '13px',
+                            width: '130px'
+                          }}
+                        />
+                      </div>
+                      <div className="field-row">
+                        <span className="field-label">{t.gstinLabel}</span>
+                        <input 
+                          type="text" 
+                          value={scannedBill.supplierGstin}
+                          onChange={(e) => handleFieldChange('supplierGstin', e.target.value)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--text-primary)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            textAlign: 'right',
+                            fontSize: '13px',
+                            width: '150px'
+                          }}
+                        />
+                      </div>
+                      <div className="field-row">
+                        <span className="field-label">{t.hsnLabel}</span>
+                        <input 
+                          type="text" 
+                          value={scannedBill.hsnCode}
+                          onChange={(e) => handleFieldChange('hsnCode', e.target.value)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--yellow)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            textAlign: 'right',
+                            fontSize: '13px',
+                            width: '90px'
+                          }}
+                        />
+                      </div>
+                      <div className="field-row">
+                        <span className="field-label">{t.amountLabel}</span>
+                        <input 
+                          type="number" 
+                          value={scannedBill.taxableValue}
+                          onChange={(e) => handleFieldChange('taxableValue', parseFloat(e.target.value) || 0)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--text-primary)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            textAlign: 'right',
+                            fontSize: '13px',
+                            width: '110px'
+                          }}
+                        />
+                      </div>
+                      <div className="field-row" style={{ display: 'flex', gap: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '6px' }}>
+                        <span className="field-label" style={{ alignSelf: 'center' }}>CGST / SGST / IGST</span>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <input 
+                            type="number" 
+                            value={scannedBill.cgst} 
+                            onChange={(e) => handleFieldChange('cgst', parseFloat(e.target.value) || 0)}
+                            title="CGST"
+                            style={{
+                              background: 'rgba(255, 255, 255, 0.03)',
+                              border: '1px solid var(--border-color)',
+                              color: 'var(--text-primary)',
+                              padding: '2px 4px',
+                              borderRadius: '4px',
+                              textAlign: 'right',
+                              fontSize: '12px',
+                              width: '52px'
+                            }}
+                          />
+                          <input 
+                            type="number" 
+                            value={scannedBill.sgst} 
+                            onChange={(e) => handleFieldChange('sgst', parseFloat(e.target.value) || 0)}
+                            title="SGST"
+                            style={{
+                              background: 'rgba(255, 255, 255, 0.03)',
+                              border: '1px solid var(--border-color)',
+                              color: 'var(--text-primary)',
+                              padding: '2px 4px',
+                              borderRadius: '4px',
+                              textAlign: 'right',
+                              fontSize: '12px',
+                              width: '52px'
+                            }}
+                          />
+                          <input 
+                            type="number" 
+                            value={scannedBill.igst} 
+                            onChange={(e) => handleFieldChange('igst', parseFloat(e.target.value) || 0)}
+                            title="IGST"
+                            style={{
+                              background: 'rgba(255, 255, 255, 0.03)',
+                              border: '1px solid var(--border-color)',
+                              color: 'var(--text-primary)',
+                              padding: '2px 4px',
+                              borderRadius: '4px',
+                              textAlign: 'right',
+                              fontSize: '12px',
+                              width: '52px'
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <pre style={{
+                      background: 'rgba(0, 0, 0, 0.25)',
+                      border: '1px solid var(--border-color)',
+                      padding: '12px',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--primary-dim)',
+                      fontFamily: 'monospace',
+                      fontSize: '10px',
+                      overflowX: 'auto',
+                      maxHeight: '260px',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-all',
+                      margin: '0',
+                      textAlign: 'left'
+                    }}>
+                      {JSON.stringify({
+                        id: scannedBill.id,
+                        doc_type: "Tax Invoice",
+                        supplier_gstin: scannedBill.supplierGstin,
+                        supplier_name: scannedBill.supplierName,
+                        invoice_number: scannedBill.invoiceNumber,
+                        invoice_date: scannedBill.invoiceDate,
+                        hsn_code: scannedBill.hsnCode,
+                        taxable_value: String(scannedBill.taxableValue),
+                        cgst_amount: String(scannedBill.cgst),
+                        sgst_amount: String(scannedBill.sgst),
+                        igst_amount: String(scannedBill.igst),
+                        grand_total: String(scannedBill.totalAmount),
+                        status: scannedBill.status,
+                        explanation: scannedBill.explanation
+                      }, null, 2)}
+                    </pre>
+                  )}
                 </div>
               </div>
 

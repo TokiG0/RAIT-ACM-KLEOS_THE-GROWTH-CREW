@@ -8,7 +8,8 @@ import {
   BookOpenCheck,
   ShieldCheck,
   LogOut,
-  Sparkles
+  Sparkles,
+  FileSpreadsheet
 } from 'lucide-react';
 
 // Component Imports
@@ -16,6 +17,7 @@ import LanguageSelector from './components/LanguageSelector';
 import Dashboard from './components/Dashboard';
 import Gstr2bImport from './components/Gstr2bImport';
 import InvoiceUpload from './components/InvoiceUpload';
+import PurchaseRegister from './components/PurchaseRegister';
 import Reconciliation from './components/Reconciliation';
 import ActionCenter from './components/ActionCenter';
 import EducationHub from './components/EducationHub';
@@ -27,8 +29,7 @@ import AiChatWindow from './components/AiChatWindow';
 // Utility Imports
 import { TRANSLATIONS } from './utils/translations';
 import { reconcileRecords } from './utils/reconciliationEngine';
-import { DUMMY_GSTR2B, DUMMY_PURCHASES } from './utils/dummyData';
-import { checkBackendHealth, getPurchaseRegistry } from './utils/api';
+import { checkBackendHealth, getPurchaseRegistry, deletePurchaseRecord } from './utils/api';
 
 export default function App() {
   const [currentLang, setCurrentLang] = useState('en');
@@ -72,6 +73,7 @@ export default function App() {
           const dbRecords = await getPurchaseRegistry();
           if (dbRecords && dbRecords.length > 0) {
             const mapped = dbRecords.map(r => ({
+              id: r.id,
               invoiceNumber: r.document_number,
               invoiceDate: r.document_date,
               supplierGstin: r.gstin_of_supplier,
@@ -118,11 +120,6 @@ export default function App() {
     setPurchaseRecords(records);
   };
 
-  // Handler: Load all demo presets instantly
-  const handleLoadDemoData = () => {
-    setGstrRecords(DUMMY_GSTR2B);
-    setPurchaseRecords(DUMMY_PURCHASES);
-  };
 
   // Handler: Add a single invoice scanned via mock OCR scanner
   const handleAddScannedPurchase = (scannedInvoice) => {
@@ -135,6 +132,7 @@ export default function App() {
       if (exists) return prev;
       
       const newInvoice = {
+        id: scannedInvoice.id || `scanned-${scannedInvoice.invoiceNumber}-${Date.now()}`,
         invoiceNumber: scannedInvoice.invoiceNumber,
         invoiceDate: scannedInvoice.invoiceDate,
         supplierGstin: scannedInvoice.supplierGstin,
@@ -149,6 +147,24 @@ export default function App() {
       };
       return [...prev, newInvoice];
     });
+  };
+
+  // Handler: Delete a purchase record from backend and local state
+  const handleDeletePurchaseRecord = async (invoiceNumber, supplierGstin, id) => {
+    if (backendActive && id && !String(id).startsWith('scanned-')) {
+      try {
+        await deletePurchaseRecord(id);
+      } catch (err) {
+        console.error("Failed to delete record from SQLite:", err);
+        alert(err.message || "Failed to delete record from backend DB");
+        return;
+      }
+    }
+    
+    // Always filter out locally from the state
+    setPurchaseRecords(prev => prev.filter(r => 
+      !(r.invoiceNumber === invoiceNumber && r.supplierGstin === supplierGstin)
+    ));
   };
 
   const t = TRANSLATIONS[currentLang];
@@ -221,6 +237,15 @@ export default function App() {
                 >
                   <ScanLine size={18} />
                   <span>{t.tabUpload}</span>
+                </button>
+              </li>
+              <li>
+                <button 
+                  className={`nav-btn ${activeTab === 'purchaseRegister' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('purchaseRegister')}
+                >
+                  <FileSpreadsheet size={18} />
+                  <span>{t.tabPurchaseRegister}</span>
                 </button>
               </li>
               <li>
@@ -318,7 +343,6 @@ export default function App() {
               purchaseRecords={purchaseRecords}
               onLoadGstr={handleLoadGstr}
               onLoadPurchases={handleLoadPurchases}
-              onLoadDemoData={handleLoadDemoData}
               currentLang={currentLang}
               backendActive={backendActive}
             />
@@ -329,6 +353,16 @@ export default function App() {
               currentLang={currentLang}
               onAddScannedPurchase={handleAddScannedPurchase}
               backendActive={backendActive}
+            />
+          )}
+
+          {activeTab === 'purchaseRegister' && (
+            <PurchaseRegister 
+              purchaseRecords={purchaseRecords}
+              reconciledData={reconciledData}
+              currentLang={currentLang}
+              backendActive={backendActive}
+              onDeleteRecord={handleDeletePurchaseRecord}
             />
           )}
 

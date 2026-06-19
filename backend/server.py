@@ -15,7 +15,7 @@ CORS(app) # Enable CORS for frontend connection
 
 # Import rule engine from main_standalone
 try:
-    from main_standalone import run_rule_checks, check_gstr2b_matching, HSN_MASTER_REGISTRY
+    from main_standalone import audit_single_invoice as run_rule_checks, HSN_MASTER_REGISTRY
 except ImportError:
     # Inline fallback if main_standalone is missing
     HSN_MASTER_REGISTRY = {
@@ -27,13 +27,12 @@ except ImportError:
     }
     def run_rule_checks(invoice_data):
         return []
-    def check_gstr2b_matching(invoice_no, taxable_value, excel_path):
-        return {"status": "MISSING_IN_2B", "row_index": None}
+
 
 # Import VLM OCR pipeline with graceful fallback
 has_vlm = False
 try:
-    import gst_ocr_pipeline_optimized_v3 as pipeline
+    import gst_ocr_pipeline as pipeline
     has_vlm = True
     DB_PATH = pipeline.DB_PATH
 except Exception as e:
@@ -332,7 +331,7 @@ def health():
         "status": "healthy",
         "vlm_loaded": has_vlm,
         "ollama_active": ollama_active,
-        "database_path": DB_PATH,
+        "database_path": str(DB_PATH),
         "mode": "VLM-premium" if has_vlm else "VLM-fallback-mode"
     })
 
@@ -346,24 +345,34 @@ def upload_invoice():
         return jsonify({"error": "No file selected"}), 400
 
     filename = file.filename.lower()
+    ocr_mode = request.form.get('ocr_mode', 'auto')
     
-    # Save file temporarily
-    temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp")
-    os.makedirs(temp_dir, exist_ok=True)
-    temp_path = os.path.join(temp_dir, file.filename)
-    file.save(temp_path)
+    # Save file directly into the invoices directory
+    invoices_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "invoices")
+    os.makedirs(invoices_dir, exist_ok=True)
+    saved_path = os.path.join(invoices_dir, file.filename)
+    file.save(saved_path)
 
     record = None
+    vlm_warning = None
+    
     try:
-        if has_vlm and pipeline:
-            # Run the VLM pipeline
-            record = pipeline.process_invoice_to_registry(
-                temp_path,
-                filename_hint=file.filename,
-                save_to_db=True,
-                db_path=DB_PATH
-            )
-        else:
+        if ocr_mode == 'vlm' or (ocr_mode == 'auto' and has_vlm):
+            if has_vlm and pipeline:
+                try:
+                    record = pipeline.process_invoice_to_registry(
+                        saved_path,
+                        filename_hint=file.filename,
+                        save_to_db=True,
+                        db_path=DB_PATH
+                    )
+                except Exception as vlm_err:
+                    print(f"[VLM ERROR] Qwen local model failed: {vlm_err}")
+                    vlm_warning = f"Qwen2.5-VL neural model failed to initialize/load: {str(vlm_err)}. Using OCR Sandbox fallback."
+            else:
+                vlm_warning = "Qwen2.5-VL OCR pipeline is not loaded on this backend. Using OCR Sandbox fallback."
+
+        if record is None:
             # Fallback matching presets or mock parser
             preset_key = "milk"
             if "soap" in filename:
@@ -406,23 +415,45 @@ def upload_invoice():
                     "source_file": raw_data.get("source_file", ""),
                     "return_period": "06-2026",
                     "line_items": raw_data.get("line_items", []),
-                    "warnings": run_rule_checks(raw_data),
+                    "warnings": [],
                     "extracted_at": datetime.utcnow().isoformat() + "Z",
                 }
                 record["id"] = fallback_save_to_purchase_registry(record)
 
         # Execute rules audit checks
         rule_flags = run_rule_checks(record)
-        record["warnings"] = [f["description"] for f in rule_flags] if rule_flags else record.get("warnings", [])
+        existing_warnings = record.get("warnings", [])
+        if not isinstance(existing_warnings, list):
+            existing_warnings = [existing_warnings] if existing_warnings else []
+            
+        audit_warnings = [f["description"] for f in rule_flags] if rule_flags else []
+        record["warnings"] = list(set(existing_warnings + audit_warnings))
+        
+        if vlm_warning:
+            record["warnings"].append(vlm_warning)
 
-        # Clean up temp file
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        # Write output JSON to processed_invoices folder
+        processed_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "processed_invoices")
+        os.makedirs(processed_dir, exist_ok=True)
+        file_stem = os.path.splitext(file.filename)[0]
+        json_path = os.path.join(processed_dir, f"{file_stem}.json")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(record, f, ensure_ascii=False, indent=2)
 
+        # Update combined purchase_registry.json
+        combined_path = os.path.join(processed_dir, "purchase_registry.json")
+        try:
+            if pipeline:
+                all_records = pipeline.get_purchase_registry(db_path=DB_PATH)
+            else:
+                all_records = fallback_get_purchase_registry()
+            with open(combined_path, "w", encoding="utf-8") as f:
+                json.dump(all_records, f, ensure_ascii=False, indent=2)
+        except Exception as comb_err:
+            print(f"[WARNING] Failed to update combined purchase_registry.json: {comb_err}")
+        
         return jsonify(record)
     except Exception as err:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
         return jsonify({"error": f"OCR pipeline failed: {str(err)}"}), 500
 
 @app.route('/api/parse-gstr2b', methods=['POST'])
@@ -521,6 +552,144 @@ def get_registry():
     except Exception as err:
         return jsonify({"error": f"Database read error: {str(err)}"}), 500
 
+@app.route('/api/purchase-registry/<int:record_id>', methods=['PUT'])
+def update_purchase_record(record_id):
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        existing = conn.execute("SELECT id FROM purchase_registry WHERE id = ?", (record_id,)).fetchone()
+        if not existing:
+            return jsonify({"error": f"Record with ID {record_id} not found"}), 404
+        
+        trade_legal_name = data.get("supplierName") or data.get("trade_legal_name", "")
+        gstin_of_supplier = data.get("supplierGstin") or data.get("gstin_of_supplier", "")
+        document_number = data.get("invoiceNumber") or data.get("document_number", "")
+        document_date = data.get("invoiceDate") or data.get("document_date", "")
+        
+        def to_float(v):
+            try: return float(v)
+            except: return 0.0
+            
+        taxable_value = to_float(data.get("taxableValue") or data.get("taxable_value", 0))
+        central_tax = to_float(data.get("cgst") or data.get("central_tax", 0))
+        state_ut_tax = to_float(data.get("sgst") or data.get("state_ut_tax", 0))
+        integrated_tax = to_float(data.get("igst") or data.get("integrated_tax", 0))
+        cess = to_float(data.get("cess", 0))
+        grand_total = to_float(data.get("totalAmount") or data.get("grand_total", 0))
+        
+        audit_record = {
+            "supplier_gstin": gstin_of_supplier,
+            "buyer_gstin": data.get("buyer_gstin", "09AAAAC4451M1Z1"),
+            "taxable_value": taxable_value,
+            "central_tax": central_tax,
+            "state_ut_tax": state_ut_tax,
+            "integrated_tax": integrated_tax,
+            "grand_total": grand_total
+        }
+        rule_flags = run_rule_checks(audit_record)
+        warnings_list = [f["description"] for f in rule_flags] if rule_flags else []
+        needs_review = 1 if (warnings_list or to_float(data.get("confidence_score", 1.0)) < 0.7) else 0
+        
+        conn.execute("""
+            UPDATE purchase_registry SET
+                trade_legal_name = ?,
+                gstin_of_supplier = ?,
+                document_number = ?,
+                document_date = ?,
+                taxable_value = ?,
+                central_tax = ?,
+                state_ut_tax = ?,
+                integrated_tax = ?,
+                cess = ?,
+                grand_total = ?,
+                needs_review = ?,
+                raw_json = ?
+            WHERE id = ?
+        """, (
+            trade_legal_name,
+            gstin_of_supplier,
+            document_number,
+            document_date,
+            taxable_value,
+            central_tax,
+            state_ut_tax,
+            integrated_tax,
+            cess,
+            grand_total,
+            needs_review,
+            json.dumps(data),
+            record_id
+        ))
+        
+        line_items = data.get("line_items", [])
+        if line_items:
+            conn.execute("DELETE FROM purchase_registry_items WHERE purchase_registry_id = ?", (record_id,))
+            for item in line_items:
+                conn.execute("""
+                    INSERT INTO purchase_registry_items (
+                        purchase_registry_id, sr_no, description, hsn_code, quantity, unit,
+                        rate, taxable_amount, gst_rate, gst_amount, total
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """, (
+                    record_id,
+                    item.get("sr") or item.get("sr_no", "1"),
+                    item.get("description", ""),
+                    item.get("hsn_code", ""),
+                    item.get("quantity", ""),
+                    item.get("unit", ""),
+                    item.get("rate", ""),
+                    item.get("taxable_amount", ""),
+                    item.get("gst_rate", ""),
+                    item.get("gst_amount", ""),
+                    item.get("total", ""),
+                ))
+                
+        conn.commit()
+        
+        updated_record = {
+            "id": record_id,
+            "trade_legal_name": trade_legal_name,
+            "gstin_of_supplier": gstin_of_supplier,
+            "document_number": document_number,
+            "document_date": document_date,
+            "taxable_value": taxable_value,
+            "central_tax": central_tax,
+            "state_ut_tax": state_ut_tax,
+            "integrated_tax": integrated_tax,
+            "cess": cess,
+            "grand_total": grand_total,
+            "warnings": warnings_list,
+            "needs_review": needs_review,
+            "line_items": line_items
+        }
+        return jsonify(updated_record)
+    except Exception as err:
+        conn.rollback()
+        return jsonify({"error": f"Failed to update database: {str(err)}"}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/purchase-registry/<int:record_id>', methods=['DELETE'])
+def delete_purchase_record(record_id):
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        existing = conn.execute("SELECT id FROM purchase_registry WHERE id = ?", (record_id,)).fetchone()
+        if not existing:
+            return jsonify({"error": f"Record with ID {record_id} not found"}), 404
+        
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("DELETE FROM purchase_registry WHERE id = ?", (record_id,))
+        conn.commit()
+        return jsonify({"message": f"Record {record_id} deleted successfully", "id": record_id})
+    except Exception as err:
+        conn.rollback()
+        return jsonify({"error": f"Failed to delete record from database: {str(err)}"}), 500
+    finally:
+        conn.close()
+
 @app.route('/api/run-rules', methods=['POST'])
 def run_rules():
     invoice_data = request.json
@@ -571,7 +740,7 @@ def chat():
         chat_history.append({"role": "user", "content": message})
         
         response = client.chat.completions.create(
-            model="llama3.2",
+            model="gemma:7b",
             messages=chat_history
         )
         ai_reply = response.choices[0].message.content
@@ -597,20 +766,20 @@ def chat():
                 f"Namaste! Mujhe lagta hai aap compliance ke bare me puch rahe hain.{mismatch_summary}\n\n"
                 "Aapke invoices me HSN code, state mismatch, ya missing supplier upload ke rules check kiye gaye hain. "
                 "Mujhse koi bhi details puchiye.\n\n"
-                "*(Note: Local Llama 3.2 is offline. Active sandbox assistant mode is running. Start Ollama to connect full chatbot)*"
+                "*(Note: Local Assistant is offline. Active sandbox assistant mode is running. Start Assistant to connect full chatbot)*"
             )
         elif reply_lang == "hi":
             reply = (
                 f"नमस्ते! जीएसटी नियमों को समझने में मैं आपकी मदद कर सकता हूँ।{mismatch_summary}\n\n"
                 "मैंने आपके बिलों की जांच की है: एचएसएन कोड अंतर और कर राशि विसंगति को हल करने के लिए आप सप्लायर से संपर्क कर सकते हैं।\n\n"
-                "*(नोट: लोकल Llama 3.2 ऑफलाइन है। सैंडबॉक्स असिस्टेंट सक्रिय है। कृपया बैकग्राउंड में Ollama चलाएं)*"
+                "*(नोट: लोकल Assistant ऑफलाइन है। सैंडबॉक्स असिस्टेंट सक्रिय है। कृपया बैकग्राउंड में Assistant चलाएं)*"
             )
         else:
             reply = (
                 f"Hello! I am your AI GST Tax assistant. I can help analyze your discrepancies.{mismatch_summary}\n\n"
                 "Common issues like HSN mismatch (e.g., milk HSN 0401 vs service code 9987) or Supplier defaults "
                 "should be checked using our Action Center. You can send supplier notifications straight over WhatsApp.\n\n"
-                "*(Note: Local Ollama llama3.2 is offline. Running in Sandbox AI mode. Start Ollama to activate full AI models)*"
+                "*(Note: Local Assistant is offline. Running in Sandbox AI mode. Start Assistant to activate full AI models)*"
             )
             
         return jsonify({"reply": reply, "source": "sandbox"})

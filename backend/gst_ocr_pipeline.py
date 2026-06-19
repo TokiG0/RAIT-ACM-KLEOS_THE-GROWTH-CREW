@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import io
 import re
+import sys
 import json
 import base64
 import hashlib
@@ -62,6 +63,18 @@ from PIL import Image
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, BitsAndBytesConfig
 import torch
 from torch.backends.cuda import sdp_kernel, SDPBackend
+
+# Reconfigure stdout/stderr to UTF-8 on import to prevent encoding errors on Windows
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -103,7 +116,7 @@ def load_model(model_id: str = "Qwen/Qwen2.5-VL-7B-Instruct"):
     if _model is not None:
         return _model, _processor
 
-    print("Loading processor …")
+    print("Loading processor ...")
     _processor = AutoProcessor.from_pretrained(
         model_id,
         max_pixels=INFER_MAX_PIXELS,
@@ -117,7 +130,7 @@ def load_model(model_id: str = "Qwen/Qwen2.5-VL-7B-Instruct"):
         bnb_4bit_use_double_quant=True,
     )
 
-    print("Loading model (4-bit, ~2-3 min on first run) …")
+    print("Loading model (4-bit, ~2-3 min on first run) ...")
     _model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
         model_id,
         quantization_config=bnb_config,
@@ -132,11 +145,11 @@ def load_model(model_id: str = "Qwen/Qwen2.5-VL-7B-Instruct"):
     if platform.system() != "Windows" and hasattr(torch, "compile"):
         try:
             _model = torch.compile(_model, mode="reduce-overhead")
-            print("✅ torch.compile enabled (first invoice will be slow — warmup)")
+            print("[OK] torch.compile enabled (first invoice will be slow - warmup)")
         except Exception as e:
             print(f"torch.compile skipped: {e}")
     else:
-        print("ℹ️  torch.compile skipped on Windows — SDPA kernel handles speedup instead")
+        print("[INFO] torch.compile skipped on Windows - SDPA kernel handles speedup instead")
 
     # Cache device once — avoids repeated attribute lookup per invoice
     _device = next(_model.parameters()).device
@@ -1426,7 +1439,7 @@ def process_invoice_to_registry(file_source, filename_hint: str = None,
         file_hash, file_data = _file_sha256(file_source, filename_hint)
         cached = _get_cached_record(file_hash, db_path)
         if cached:
-            print(f"⏭  already parsed (SHA-256 match) → returning cached record "
+            print(f"[SKIP] already parsed (SHA-256 match) -> returning cached record "
                   f"(id={cached.get('id')}, doc={cached.get('document_number', '?')})")
             return cached
         # For streams: _file_sha256 consumed the bytes; forward the materialized
@@ -1518,24 +1531,24 @@ def process_invoices_folder(input_dir: str = "invoices", output_dir: str = "proc
     results = {"processed": [], "skipped": [], "failed": [], "needs_review": [], "output_dir": str(output_path)}
 
     if not files:
-        print(f"⚠️  No PDF/JPEG/PNG invoices found in {input_path.resolve()}")
+        print(f"[WARN] No PDF/JPEG/PNG invoices found in {input_path.resolve()}")
         return results
 
-    print(f"Found {len(files)} invoice(s) in {input_path.resolve()} …")
+    print(f"Found {len(files)} invoice(s) in {input_path.resolve()} ...")
 
     for i, f in enumerate(files, 1):
-        print(f"[{i}/{len(files)}] {f.name} … ", end="", flush=True)
+        print(f"[{i}/{len(files)}] {f.name} ... ", end="", flush=True)
 
         # ── Per-file hash check: skip the VLM entirely for seen files ──────────
         # Checking the hash here (before process_invoice_to_registry) lets us
-        # print a clear "⏭ skipped" line and add to results["skipped"] without
+        # print a clear "[SKIP] skipped" line and add to results["skipped"] without
         # going through the full pipeline call.
         if skip_if_seen and save_to_db:
             try:
                 file_hash, _ = _file_sha256(str(f))
                 cached = _get_cached_record(file_hash, db_path)
                 if cached:
-                    print(f"⏭  skipped (already parsed, id={cached.get('id')})")
+                    print(f"[SKIP] skipped (already parsed, id={cached.get('id')})")
                     results["skipped"].append({"source": f.name, "id": cached.get("id")})
                     continue
             except Exception as hash_err:
@@ -1552,7 +1565,7 @@ def process_invoices_folder(input_dir: str = "invoices", output_dir: str = "proc
                 update_existing=update_existing,
             )
         except Exception as e:
-            print(f"❌ failed: {e}")
+            print(f"[FAIL] failed: {e}")
             results["failed"].append({"source": f.name, "error": str(e)})
             continue
 
@@ -1563,9 +1576,9 @@ def process_invoices_folder(input_dir: str = "invoices", output_dir: str = "proc
 
         if record.get("warnings"):
             results["needs_review"].append({"source": f.name, "warnings": record["warnings"]})
-            print(f"⚠️  saved (review: {len(record['warnings'])} issue(s))")
+            print(f"[WARN] saved (review: {len(record['warnings'])} issue(s))")
         else:
-            print("✅ saved")
+            print("[OK] saved")
 
     combined_path = output_path / "purchase_registry.json"
     combined_path.write_text(
@@ -1574,9 +1587,9 @@ def process_invoices_folder(input_dir: str = "invoices", output_dir: str = "proc
 
     print(f"\nDone: {len(results['processed'])} processed, {len(results['skipped'])} skipped, "
           f"{len(results['failed'])} failed, {len(results['needs_review'])} flagged for review.")
-    print(f"Combined JSON → {combined_path}")
+    print(f"Combined JSON -> {combined_path}")
     if save_to_db:
-        print(f"Saved to database → {Path(db_path).resolve()}")
+        print(f"Saved to database -> {Path(db_path).resolve()}")
 
     return results
 
@@ -1711,11 +1724,11 @@ if __name__ == "__main__":
 
     if not target.exists():
         if args.file == "invoices":
-            print(f"⚠️  No '{target}' folder found. Create an 'invoices' folder and put your "
-                  f"scanned/uploaded PDF, JPEG, or PNG invoices inside, then re-run — "
+            print(f"[WARN] No '{target}' folder found. Create an 'invoices' folder and put your "
+                  f"scanned/uploaded PDF, JPEG, or PNG invoices inside, then re-run - "
                   f"or point at one file directly: python {Path(__file__).name} path/to/invoice.pdf")
         else:
-            print(f"❌ File or folder not found: {target}")
+            print(f"[FAIL] File or folder not found: {target}")
         raise SystemExit(1)
 
     if target.is_dir():
@@ -1744,15 +1757,15 @@ if __name__ == "__main__":
             update_existing=args.update_existing,
         )
         if not args.no_save:
-            print(f"✅ Saved to purchase registry → {args.db}  "
+            print(f"[OK] Saved to purchase registry -> {args.db}  "
                   f"(id={result.get('id')}, period={result.get('return_period')})")
             if result.get("warnings"):
                 for w in result["warnings"]:
-                    print(f"⚠️  {w}")
+                    print(f"[WARN] {w}")
 
     if args.export:
         export_registry_to_json(args.export, db_path=args.db, return_period=args.period)
-        print(f"📤 Exported purchase registry → {args.export}")
+        print(f"[EXPORT] Exported purchase registry -> {args.export}")
 
     output = json.dumps(result, ensure_ascii=False, indent=2)
 

@@ -120,15 +120,15 @@ def main():
     print("💼 SYSTEM: Initializing Integrated CA Audit Engine...")
     print("========================================================")
 
-    # Path routing to align perfectly with Person A's output directory
+    # Path routing to align perfectly with Person A's default folders
     purchase_file = os.path.join("processed_invoices", "purchase_registry.json")
     excel_source_file = "GSTR2B_Dummy_Dataset.xlsx"
 
     # Dynamically bootstrap Person A's pipeline module functions
     try:
-        import gst_ocr_pipeline_optimized_v3 as person_a_pipeline
+        import gst_ocr_pipeline as person_a_pipeline
     except ImportError:
-        print("❌ Integration Error: Could not locate 'gst_ocr_pipeline_optimized_v3.py' in the current workspace.")
+        print("❌ Integration Error: Could not locate 'gst_ocr_pipeline.py' in the current workspace.")
         return
 
     if not os.path.exists(purchase_file):
@@ -147,7 +147,7 @@ def main():
         with open(purchase_file, "r", encoding="utf-8") as f:
             raw_purchase = json.load(f)
         
-        # Handshake: Utilize upstream function logic to parse live spreadsheet array streams directly
+        # Handshake: Utilize upstream function logic to parse live spreadsheet arrays directly
         gstr_list = person_a_pipeline.parse_gstr2b_excel(excel_source_file)
     except Exception as e:
         print(f"❌ Core File Loading Error: {str(e)}")
@@ -172,14 +172,13 @@ def main():
     client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
     
     system_instruction = (
-        "You are an automated corporate Chartered Accountant expert engine specializing in Indian GST compliance analytics.\n"
-        "Your sole job is to review tax audit metrics and answer the user's questions truthfully and clinically.\n\n"
-        "CORE RULES:\n"
-        "1. DO NOT adopt any fictional human names. Speak purely as a corporate analytical framework.\n"
-        "2. DO NOT ask the user to schedule meetings, phone calls, or consultations. Answer everything right here.\n"
-        "3. DEFAULT LANGUAGE IS PLAIN ENGLISH. If all metrics are clear and matching, state that everything is fine.\n"
-        "4. If the user writes a question in Hinglish/Hindi, mirror the dialect perfectly. Otherwise, stick completely to clear English.\n"
-        "5. Keep responses brief, analytical, and professional."
+        "CRITICAL SYSTEM RULE: YOU MUST RESPOND 100% IN STANDARD PROFESSIONAL ENGLISH ONLY.\n"
+        "You are an automated corporate ledger auditing utility checking GST compliance analytics.\n\n"
+        "DIALECT CONTROLS:\n"
+        "1. DO NOT greet the user with colloquial greetings or use any localized Hindi phrases by default.\n"
+        "2. The initial text and all systematic breakdown reviews must be written entirely in clear, formal English.\n"
+        "3. You are completely restricted from outputting Hinglish phrasing unless the user directly pings you with a clear Hindi/Hinglish query first.\n"
+        "4. Keep entries succinct, tactical, and accounting-focused."
     )
 
     chat_history = [
@@ -191,14 +190,16 @@ def main():
     ]
 
     try:
-        response = client.chat.completions.create(model="llama3.2", messages=chat_history)
+        # Integrated Upgraded Target Model Parameters
+        response = client.chat.completions.create(model="gemma:7b", messages=chat_history)
         ai_initial_reply = response.choices[0].message.content
-        print("\n================ 📑 CA COMPLIANCE WORKSPACE ================")
+        print("\n================ 📑 COMPLIANCE AUDIT WORKSPACE ================")
         print(f"AI: {ai_initial_reply}")
         print("============================================================")
         chat_history.append({"role": "assistant", "content": ai_initial_reply})
     except Exception as e:
         print(f"\n❌ Local AI Execution Error: {str(e)}")
+        print("Please verify your local instance has pulled the target model weights via: 'ollama pull gemma:7b'")
         return
 
     while True:
@@ -211,7 +212,7 @@ def main():
                 continue
 
             chat_history.append({"role": "user", "content": user_input})
-            response = client.chat.completions.create(model="llama3.2", messages=chat_history)
+            response = client.chat.completions.create(model="gemma:7b", messages=chat_history)
             ai_reply = response.choices[0].message.content
             print(f"\nAI: {ai_reply}")
             chat_history.append({"role": "assistant", "content": ai_reply})
