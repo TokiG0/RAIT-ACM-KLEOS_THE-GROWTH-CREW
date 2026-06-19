@@ -1,0 +1,22 @@
+# Tasks: Implementing PocketCA
+
+- [x] Initialize the React Vite project in workspace
+- [x] Install dependencies (like lucide-react for modern icons, and configuring for offline Excel/CSV handling)
+- [x] Create core utilities
+  - [x] `src/utils/dummyData.js` (Generate realistic datasets)
+  - [x] `src/utils/reconciliationEngine.js` (Fuzzy matching rules)
+- [x] Create UI components
+  - [x] `src/components/LanguageSelector.jsx` (Language translation layer)
+  - [x] `src/components/Dashboard.jsx` (Visual state overview)
+  - [x] `src/components/Gstr2bImport.jsx` (CSV drag-and-drop import)
+  - [x] `src/components/InvoiceUpload.jsx` (Mock OCR scanner and presets)
+  - [x] `src/components/Reconciliation.jsx` (Reconciliation status tables)
+  - [x] `src/components/ActionCenter.jsx` (WhatsApp outreach utility)
+  - [x] `src/components/EducationHub.jsx` (FAQ guide for traders)
+- [x] Styling and Design Polish (`src/index.css`)
+  - [x] Custom dark/glass theme, gradients, and fonts
+  - [x] Premium dashboard and responsive mobile layout
+- [x] Wire up main `src/App.jsx` and `index.html`
+- [x] Verification and Testing
+  - [x] Verification script for reconciliation engine
+  - [x] Build and local dev server execution verification
