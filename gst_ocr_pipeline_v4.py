@@ -1,4 +1,49 @@
+"""
+GST OCR Pipeline — Qwen2.5-VL-7B  |  v3 — Purchase Registry + Database
+Extracts structured invoice data from scanned/uploaded PDF/image/photo
+invoices and converts it into the standard GST Purchase Registry format:
 
+    GSTIN of supplier *, Trade/Legal name, Type of inward supplies *,
+    Document type *, Document number *, Document date *,
+    Taxable value (₹) *, Integrated tax (₹), Central tax (₹),
+    State/ UT tax (₹), Cess (₹)
+
+Each invoice can contain multiple products (line items), and multiple
+invoices accumulate per supplier per month. Every processed invoice is
+saved as a JSON record and persisted to a local SQLite database
+(gst_purchase_registry.db) so the reconciliation engine can read the
+purchase registry directly via get_purchase_registry() instead of
+re-parsing files.
+
+v3 additions (on top of v2 speed fixes):
+  - Accepts scanned/uploaded invoices straight from memory (bytes or a
+    file-like upload object), not just files already saved to disk
+  - Batch mode: point the CLI (or process_invoices_folder()) at an
+    "invoices/" folder of PDFs/JPEGs/PNGs — every file is parsed, saved to
+    the SQLite DB, and written out as JSON (per-invoice + a combined file)
+  - Extracts supplier trade/legal name + cess (previously missing)
+  - to_purchase_registry(): maps extraction output → official header format
+  - SQLite storage layer: init_db / save_to_purchase_registry /
+    get_purchase_registry / export_registry_to_json
+  - Document type normalization (Invoice / Credit Note / Debit Note / Bill of Entry)
+  - Type-of-inward-supply heuristic classification (Inputs / Capital Goods / Input Services)
+  - Header vs. line-item total cross-checks → needs_review flag for the reconciliation engine
+  - Idempotent upserts: re-processing the same invoice updates, not duplicates
+
+v2 speed improvements (ported from herbarium_vlm_pipeline_v3.2):
+  - Hard-resize images to MAX_SIDE=896 BEFORE processor sees them
+    → prevents massive tile grids from high-res phone photos / scanned PDFs
+  - img.draft() hint for JPEG: free decode at reduced resolution
+  - max_pixels + min_pixels passed to AutoProcessor → second pixel budget lock
+  - PDF rendered at 150 DPI instead of 200 DPI (~44% fewer pixels, sufficient for OCR)
+  - max_new_tokens 900 → 600 (covers invoices with up to ~10 line items; saves ~0.5s vs 900)
+  - bfloat16 instead of float16 — more stable on RTX 40xx, same speed
+  - padding=False in processor() call — avoids wasted pad tokens
+  - SDPA kernel priority (Flash → Efficient → Math) via context manager in generate()
+  - torch.compile(mode="reduce-overhead") on Linux for ~20-30% generation speedup
+  - DEVICE cached once at model load instead of accessed per-call
+  - _merge_pages() now also resizes the canvas before returning
+"""
 
 from __future__ import annotations
 
@@ -37,7 +82,9 @@ INFER_MIN_PIXELS =  32 * 28 * 28   # 25,088 px   (avoids forced upscaling of tin
 
 # Token budget for generation.
 # A GST invoice with 1-2 line items is ~200-250 tokens.
-
+# A real invoice with 8-10 line items can reach 500-600 tokens.
+# 600 is a safe ceiling that covers most invoices while saving ~1s vs 900.
+# Raise to 900 only if you see truncated output on dense multi-item invoices.
 MAX_NEW_TOKENS = 600
 
 # SDPA backend priority — avoids slow MATH fallback
@@ -80,7 +127,8 @@ def load_model(model_id: str = "Qwen/Qwen2.5-VL-7B-Instruct"):
     )
     _model.eval()
 
-    
+    # torch.compile: ~20-30% generation speedup on Linux; skip silently on Windows
+    # (triton — compile's backend — is not officially supported on Windows)
     if platform.system() != "Windows" and hasattr(torch, "compile"):
         try:
             _model = torch.compile(_model, mode="reduce-overhead")
@@ -109,7 +157,7 @@ def _resize_for_vlm(img: Image.Image) -> Image.Image:
     side while preserving aspect ratio and never upscaling small images.
     """
     # draft() is a free JPEG decode hint — tells the decoder to skip pixels we'll
-    
+    # discard.  No-op for PNG/TIFF, so safe to call unconditionally.
     img.draft("RGB", (MAX_SIDE, MAX_SIDE))
     img = img.convert("RGB")
     img.thumbnail((MAX_SIDE, MAX_SIDE), Image.LANCZOS)
@@ -272,13 +320,14 @@ def _run_vlm(images: list[Image.Image]) -> str:
     text = processor.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
     )
+    # FIX: padding=False — single-image inference has nothing to pad against;
     # padding adds wasted tokens and slows prefill.
     inputs = processor(
         text=[text], images=[img], padding=False, return_tensors="pt"
     ).to(_device)
 
     with torch.no_grad():
-
+        # FIX: SDPA kernel priority — ensures Flash or Efficient path is used,
         # avoids falling back to the slow MATH kernel silently.
         with sdp_kernel(
             enable_flash=True,
@@ -393,7 +442,16 @@ def _norm_amount(val: str) -> str:
 
 
 # ── 5d. Date normalization ─────────────────────────────────────────────────────
-
+# GST invoices arrive in dozens of date formats depending on what generated
+# them — Tally, Zoho, SAP, regional billing software, handwritten bills,
+# scanned old invoices, or an Excel/DB export with a full timestamp. Parsing
+# is deliberately layered to recognize as many of these as possible:
+#   1. A large explicit strptime format list (fast, exact, no ambiguity)
+#   2. Light cleanup (ordinal suffixes, weekday prefixes, month-name typos)
+#      then the format list again
+#   3. dateutil as a catch-all for anything still unrecognized (optional
+#      dependency — `pip install python-dateutil` for full coverage; the
+#      pipeline still works without it, just with narrower recognition)
 
 try:
     from dateutil import parser as _dateutil_parser
@@ -443,11 +501,19 @@ def _clean_date_string(val: str) -> str:
 
 
 # ── Year plausibility correction ──────────────────────────────────────────────
-
+# VLMs commonly misread "6" as "0" in year digits, turning 2026 → 2020.
+# This is made worse when the invoice number itself contains an earlier year
+# (e.g. "INV-2020-0019-A"), anchoring the model's prediction.
+#
+# Strategy: if the parsed year is more than _YEAR_DRIFT years before the
+# current year, try individual single-digit OCR swaps on the year string
+# (last digit first, since that is where the error almost always occurs).
+# Accept the first candidate that falls within _YEAR_DRIFT years of today.
 
 _CURRENT_YEAR: int = datetime.now().year
 _YEAR_DRIFT:   int = 5          # tolerate invoices up to 5 years old without correction
-
+# Digit pairs confused in print/scan OCR — tried on each position individually
+# (NOT a bulk str.replace — one position at a time avoids cascading changes).
 # Ordered by GST-invoice likelihood: 0↔6 is by far the dominant year-digit error.
 _OCR_DIGIT_SWAPS = [("0", "6"), ("6", "0"), ("1", "7"), ("7", "1")]
 
@@ -847,13 +913,23 @@ def init_db(db_path=DB_PATH) -> sqlite3.Connection:
     return conn
 
 
-def save_to_purchase_registry(record: dict, db_path=DB_PATH) -> int:
+def save_to_purchase_registry(record: dict, db_path=DB_PATH,
+                              update_existing: bool = False) -> int:
     """
-    Upsert one Purchase Registry record (header + line items) into SQLite.
-    Idempotent: re-processing the same invoice (same GSTIN + document number
-    + document type) updates the existing row instead of creating a
-    duplicate — safe to call again if a scan is re-uploaded.
-    Returns the row id.
+    Insert one Purchase Registry record (header + line items) into SQLite.
+
+    Duplicate handling (same GSTIN + document number + document type):
+      - update_existing=False (DEFAULT): the record already exists, so it is
+        LEFT UNTOUCHED — no update, no duplicate row. The existing row id is
+        returned. This is the "don't update if a duplicate is present"
+        behaviour: once an invoice is in the registry, re-processing it never
+        overwrites the stored data.
+      - update_existing=True: the existing row is overwritten with the new
+        record (the old upsert behaviour). Use this only when you deliberately
+        want a re-scan to replace what's already stored.
+
+    If the record is genuinely new it is always inserted.
+    Returns the row id (existing or newly inserted).
     """
     conn = init_db(db_path)
     try:
@@ -891,6 +967,15 @@ def save_to_purchase_registry(record: dict, db_path=DB_PATH) -> int:
 
         if existing:
             registry_id = existing[0]
+
+            # ── Duplicate present: by default do NOT update ──────────────────
+            # The invoice is already in the registry. Unless the caller
+            # explicitly asks to overwrite, leave the stored data exactly as
+            # it is and return the existing id.
+            if not update_existing:
+                conn.commit()
+                return registry_id
+
             params["id"] = registry_id
             conn.execute("""
                 UPDATE purchase_registry SET
@@ -1058,6 +1143,100 @@ def get_purchase_registry(db_path=DB_PATH, gstin: str = None, return_period: str
         conn.close()
 
 
+def load_registry_json(json_path) -> list[dict]:
+    """Load purchase registry records from a JSON file written by
+    export_registry_to_json() or process_invoices_folder()'s combined
+    purchase_registry.json. Returns a list of record dicts (or [] if the
+    file is missing or empty)."""
+    p = Path(json_path)
+    if not p.exists():
+        return []
+    try:
+        data = json.loads(p.read_text(encoding="utf-8") or "[]")
+    except (json.JSONDecodeError, OSError):
+        return []
+    # Combined files are a list; a single-invoice file may be one dict.
+    if isinstance(data, dict):
+        return [data]
+    return data if isinstance(data, list) else []
+
+
+def query_registry(source="db", db_path=DB_PATH, json_path=None,
+                   gstin: str = None, return_period: str = None,
+                   document_number: str = None, supplier_name: str = None,
+                   needs_review_only: bool = False) -> list[dict]:
+    """
+    Unified query over the purchase registry — works against the SQLite DB,
+    a purchase registry JSON file, or both, with the same filters.
+
+    This is the single entry point the reconciliation engine (or any caller)
+    can use whether the registry lives in the database or in an exported JSON
+    file, without writing separate lookup code for each.
+
+    Args:
+        source: where to read from —
+            "db"   → query the SQLite DB (default)
+            "json" → query a purchase registry JSON file (needs json_path)
+            "both" → read from both and merge, de-duplicated on
+                     (gstin_of_supplier, document_number, document_type)
+        db_path: SQLite DB path (used when source is "db" or "both")
+        json_path: JSON file path (required when source is "json" or "both")
+        gstin: filter to one supplier GSTIN (matches gstin_of_supplier)
+        return_period: filter to one tax period "MM-YYYY"
+        document_number: filter to one document/invoice number (exact match)
+        supplier_name: case-insensitive substring match on trade/legal name
+        needs_review_only: only return records flagged for human review
+
+    Returns:
+        list of record dicts (each with nested line_items), filtered.
+    """
+    def _matches(rec: dict) -> bool:
+        if gstin and rec.get("gstin_of_supplier") != gstin:
+            return False
+        if return_period and rec.get("return_period") != return_period:
+            return False
+        if document_number and rec.get("document_number") != document_number:
+            return False
+        if supplier_name:
+            name = (rec.get("trade_legal_name") or "").lower()
+            if supplier_name.lower() not in name:
+                return False
+        if needs_review_only and not rec.get("needs_review"):
+            return False
+        return True
+
+    records: list[dict] = []
+
+    if source in ("db", "both"):
+        # Let the DB do the indexed filtering it already supports, then apply
+        # the extra (document_number / supplier_name) filters in Python.
+        db_records = get_purchase_registry(
+            db_path=db_path, gstin=gstin, return_period=return_period,
+            needs_review_only=needs_review_only,
+        )
+        records.extend(r for r in db_records if _matches(r))
+
+    if source in ("json", "both"):
+        if not json_path:
+            raise ValueError("json_path is required when source is 'json' or 'both'.")
+        json_records = load_registry_json(json_path)
+        records.extend(r for r in json_records if _matches(r))
+
+    if source == "both":
+        # De-duplicate across the two sources on the natural invoice key,
+        # keeping the first occurrence (DB rows come first).
+        seen, deduped = set(), []
+        for r in records:
+            key = (r.get("gstin_of_supplier"), r.get("document_number"), r.get("document_type"))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(r)
+        records = deduped
+
+    return records
+
+
 def export_registry_to_json(out_path, db_path=DB_PATH, gstin: str = None,
                              return_period: str = None) -> str:
     """Dump the current Purchase Registry (optionally filtered) to a JSON
@@ -1208,7 +1387,8 @@ def extract_invoice(file_source, filename_hint: str = None) -> dict:
 def process_invoice_to_registry(file_source, filename_hint: str = None,
                                  type_of_inward_supply: str = None,
                                  save_to_db: bool = True, db_path=DB_PATH,
-                                 skip_if_seen: bool = True) -> dict:
+                                 skip_if_seen: bool = True,
+                                 update_existing: bool = False) -> dict:
     """
     Full pipeline for one scanned/uploaded invoice:
         invoice (file / bytes / upload stream)
@@ -1232,6 +1412,10 @@ def process_invoice_to_registry(file_source, filename_hint: str = None,
             hash is already in the DB, return the cached record immediately
             without re-parsing. Set False (or use --force on the CLI) to
             force a fresh VLM run even for previously seen files.
+        update_existing: if False (default), a record that already exists in
+            the registry (same GSTIN + document number + document type) is left
+            untouched — duplicates never overwrite stored data. Set True to
+            allow a re-scan to overwrite the existing row.
     """
     file_hash = file_data = None
 
@@ -1254,7 +1438,9 @@ def process_invoice_to_registry(file_source, filename_hint: str = None,
     record = to_purchase_registry(raw, type_of_inward_supply=type_of_inward_supply)
 
     if save_to_db:
-        record["id"] = save_to_purchase_registry(record, db_path=db_path)
+        record["id"] = save_to_purchase_registry(
+            record, db_path=db_path, update_existing=update_existing
+        )
         if file_hash:
             _save_file_hash(file_hash, record.get("source_file", ""), record["id"], db_path)
 
@@ -1268,7 +1454,8 @@ SUPPORTED_INVOICE_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff"
 def process_invoices_folder(input_dir: str = "invoices", output_dir: str = "processed_invoices",
                              save_to_db: bool = True, db_path=DB_PATH,
                              type_of_inward_supply: str = None,
-                             skip_if_seen: bool = True) -> dict:
+                             skip_if_seen: bool = True,
+                             update_existing: bool = False) -> dict:
     """
     Batch-process every PDF/JPEG/PNG invoice sitting in `input_dir`:
 
@@ -1362,6 +1549,7 @@ def process_invoices_folder(input_dir: str = "invoices", output_dir: str = "proc
                 save_to_db=save_to_db,
                 db_path=db_path,
                 skip_if_seen=False,   # already checked above — avoid double hash
+                update_existing=update_existing,
             )
         except Exception as e:
             print(f"❌ failed: {e}")
@@ -1480,12 +1668,44 @@ if __name__ == "__main__":
     parser.add_argument("--force", action="store_true",
                          help="Re-parse even if the file's SHA-256 hash is already in the DB "
                               "(overrides the default skip-if-seen behaviour)")
+    parser.add_argument("--update-existing", action="store_true",
+                         help="Overwrite a record that already exists in the registry "
+                              "(same GSTIN + document number + type). Default: duplicates are "
+                              "left untouched — never updated.")
     parser.add_argument("--inward-type", choices=["Inputs", "Capital Goods", "Input Services"],
                          help="Override the auto-classified 'Type of inward supplies'")
     parser.add_argument("--export", metavar="PATH",
                          help="After saving, export the full purchase registry (optionally filtered by --period) to this JSON file")
     parser.add_argument("--period", metavar="MM-YYYY", help="Filter --export to one tax period")
+    parser.add_argument("--query", action="store_true",
+                         help="Query mode: read records from the registry instead of parsing invoices. "
+                              "Combine with --from, --gstin, --doc-no, --supplier, --period, --review-only.")
+    parser.add_argument("--from", dest="query_source", choices=["db", "json", "both"], default="db",
+                         help="Query source: db (default), json (needs --json-path), or both")
+    parser.add_argument("--json-path", help="Purchase registry JSON file to query (for --from json/both)")
+    parser.add_argument("--gstin", help="Query filter: supplier GSTIN")
+    parser.add_argument("--doc-no", help="Query filter: document/invoice number (exact match)")
+    parser.add_argument("--supplier", help="Query filter: supplier trade/legal name (substring match)")
+    parser.add_argument("--review-only", action="store_true",
+                         help="Query filter: only records flagged needs_review")
     args = parser.parse_args()
+
+    # ── Query mode: read from the registry (DB / JSON / both) and exit ─────────
+    if args.query:
+        records = query_registry(
+            source=args.query_source, db_path=args.db, json_path=args.json_path,
+            gstin=args.gstin, return_period=args.period, document_number=args.doc_no,
+            supplier_name=args.supplier, needs_review_only=args.review_only,
+        )
+        output = json.dumps(records, ensure_ascii=False, indent=2)
+        if args.out:
+            Path(args.out).write_text(output, encoding="utf-8")
+            print(f"{len(records)} record(s) → {args.out}")
+        else:
+            print(output)
+            print(f"\n{len(records)} record(s) found.")
+        raise SystemExit(0)
+
 
     target = Path(args.file)
 
@@ -1508,6 +1728,7 @@ if __name__ == "__main__":
             db_path=args.db,
             type_of_inward_supply=args.inward_type,
             skip_if_seen=not args.force,
+            update_existing=args.update_existing,
         )
     elif args.excel or args.file.lower().endswith((".xlsx", ".xls")):
         result = parse_gstr2b_excel(args.file)
@@ -1520,6 +1741,7 @@ if __name__ == "__main__":
             save_to_db=not args.no_save,
             db_path=args.db,
             skip_if_seen=not args.force,
+            update_existing=args.update_existing,
         )
         if not args.no_save:
             print(f"✅ Saved to purchase registry → {args.db}  "

@@ -3,8 +3,8 @@
   "trade_legal_name": "KLEOS Tech Solutions Pvt Ltd",
   "type_of_inward_supply": "Inputs",
   "document_type": "Invoice",
-  "document_number": "IN1-2020-0619-C",
-  "document_date": "19-Jun-2020",
+  "document_number": "INV-2026-0619-C",
+  "document_date": "19-Jun-2026",
   "taxable_value": "135000.00",
   "integrated_tax": "0.00",
   "central_tax": "12150.00",
@@ -17,7 +17,7 @@
     "overall": 0.9
   },
   "source_file": "GSTR2B_Simulation_Invoice_v3.pdf",
-  "return_period": "06-2020",
+  "return_period": "06-2026",
   "line_items": [
     {
       "sr": "1",
@@ -60,6 +60,6 @@
     "GSTIN of supplier is missing or invalid.",
     "Line items GST sum (12150.00) does not match header GST total (24300.00) — possible OCR error."
   ],
-  "extracted_at": "2026-06-19T11:19:34.170036Z",
-  "id": 3
+  "extracted_at": "2026-06-19T17:12:28.134865Z",
+  "id": 6
 }
