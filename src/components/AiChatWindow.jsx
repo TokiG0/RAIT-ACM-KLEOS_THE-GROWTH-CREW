@@ -99,7 +99,7 @@ export default function AiChatWindow({ reconciledData, currentLang, onClose }) {
             <h4>AI Tax Assistant</h4>
             <span className="text-small text-muted flex-center-inline">
               <span className={`chat-indicator ${systemSource === 'ollama' ? 'indicator-green' : 'indicator-blue'}`}></span>
-              {systemSource === 'ollama' ? 'Llama 3.2 (Ollama Local)' : 'PocketCA VLM Sandbox'}
+              {systemSource === 'ollama' ? 'Gemma:7b (Ollama Local)' : 'PocketCA VLM Sandbox'}
             </span>
           </div>
         </div>

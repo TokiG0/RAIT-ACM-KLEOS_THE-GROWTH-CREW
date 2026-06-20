@@ -45,10 +45,10 @@
     }
   ],
   "warnings": [
-    "Line items GST sum (3496.95) does not match header GST total (50.00) — possible OCR error.",
     "GSTIN of supplier is missing or invalid.",
-    "Line items taxable value sum (14558.50) does not match header taxable value (13514.00) — possible OCR error."
+    "Line items taxable value sum (14558.50) does not match header taxable value (13514.00) — possible OCR error.",
+    "Line items GST sum (3496.95) does not match header GST total (50.00) — possible OCR error."
   ],
-  "extracted_at": "2026-06-19T23:44:14.605471Z",
-  "id": 15
+  "extracted_at": "2026-06-20T01:21:20.986229Z",
+  "id": 17
 }
