@@ -220,99 +220,6 @@ if pipeline:
 else:
     fallback_init_db()
 
-# Pre-packaged OCR presets matching InvoiceUpload sample items
-PRESET_OCR_DATA = {
-    "milk": {
-        "doc_type": "Tax Invoice",
-        "supplier_gstin": "09AAAAC4451M1Z1",
-        "supplier_name": "Nitin Dairy & Farms",
-        "buyer_gstin": "09AAAAC4451M1Z1",
-        "invoice_number": "INV-002",
-        "invoice_date": "02-Jun-2026",
-        "place_of_supply": "Uttar Pradesh (09)",
-        "grand_total": "15750.00",
-        "cgst_amount": "375.00",
-        "sgst_amount": "375.00",
-        "igst_amount": "0.00",
-        "cess_amount": "0.00",
-        "taxable_value": "15000.00",
-        "line_items": [
-            {
-                "sr": "1",
-                "description": "Standardized Toned Milk",
-                "hsn_code": "0401",
-                "quantity": "300",
-                "unit": "Liters",
-                "rate": "50.00",
-                "taxable_amount": "15000.00",
-                "gst_rate": "5%",
-                "gst_amount": "750.00",
-                "total": "15750.00"
-            }
-        ],
-        "confidence": {"overall": 0.98}
-    },
-    "soap": {
-        "doc_type": "Tax Invoice",
-        "supplier_gstin": "09BBBCC4451M1Z2",
-        "supplier_name": "Gupta Soap Works",
-        "buyer_gstin": "09AAAAC4451M1Z1",
-        "invoice_number": "INV-004",
-        "invoice_date": "06-Jun-2026",
-        "place_of_supply": "Uttar Pradesh (09)",
-        "grand_total": "9440.00",
-        "cgst_amount": "720.00",
-        "sgst_amount": "720.00",
-        "igst_amount": "0.00",
-        "cess_amount": "0.00",
-        "taxable_value": "8000.00",
-        "line_items": [
-            {
-                "sr": "1",
-                "description": "Premium Washing Soap Bars",
-                "hsn_code": "3401",
-                "quantity": "400",
-                "unit": "Pcs",
-                "rate": "20.00",
-                "taxable_amount": "8000.00",
-                "gst_rate": "18%",
-                "gst_amount": "1440.00",
-                "total": "9440.00"
-            }
-        ],
-        "confidence": {"overall": 0.97}
-    },
-    "paper": {
-        "doc_type": "Tax Invoice",
-        "supplier_gstin": "09DDDEE4451M1Z3",
-        "supplier_name": "Karan Paper House",
-        "buyer_gstin": "09AAAAC4451M1Z1",
-        "invoice_number": "INV-005",
-        "invoice_date": "10-Jun-2026",
-        "place_of_supply": "Uttar Pradesh (09)",
-        "grand_total": "33600.00",
-        "cgst_amount": "1800.00",
-        "sgst_amount": "1800.00",
-        "igst_amount": "0.00",
-        "cess_amount": "0.00",
-        "taxable_value": "30000.00",
-        "line_items": [
-            {
-                "sr": "1",
-                "description": "A4 Photocopy Paper Reams",
-                "hsn_code": "4802",
-                "quantity": "150",
-                "unit": "Reams",
-                "rate": "200.00",
-                "taxable_amount": "30000.00",
-                "gst_rate": "12%",
-                "gst_amount": "3600.00",
-                "total": "33600.00"
-            }
-        ],
-        "confidence": {"overall": 0.99}
-    }
-}
 
 # --- ROUTES ---
 
@@ -368,57 +275,12 @@ def upload_invoice():
                     )
                 except Exception as vlm_err:
                     print(f"[VLM ERROR] Qwen local model failed: {vlm_err}")
-                    vlm_warning = f"Qwen2.5-VL neural model failed to initialize/load: {str(vlm_err)}. Using OCR Sandbox fallback."
+                    vlm_warning = f"Qwen2.5-VL neural model failed to initialize/load: {str(vlm_err)}."
             else:
-                vlm_warning = "Qwen2.5-VL OCR pipeline is not loaded on this backend. Using OCR Sandbox fallback."
+                vlm_warning = "Qwen2.5-VL OCR pipeline is not loaded on this backend."
 
         if record is None:
-            # Fallback matching presets or mock parser
-            preset_key = "milk"
-            if "soap" in filename:
-                preset_key = "soap"
-            elif "paper" in filename:
-                preset_key = "paper"
-            elif "milk" in filename:
-                preset_key = "milk"
-            else:
-                # Random choice if unknown file
-                preset_key = random.choice(["milk", "soap", "paper"])
-            
-            raw_data = dict(PRESET_OCR_DATA[preset_key])
-            # Randomize invoice number slightly for uniqueness
-            raw_data["invoice_number"] = f"INV-{random.randint(100, 999)}"
-            raw_data["source_file"] = file.filename
-            
-            # Map values to match Purchase Registry record
-            if pipeline:
-                record = pipeline.to_purchase_registry(raw_data)
-                record["id"] = pipeline.save_to_purchase_registry(record, db_path=DB_PATH)
-            else:
-                # Manual formatting mapping
-                record = {
-                    "gstin_of_supplier": raw_data.get("supplier_gstin", ""),
-                    "trade_legal_name": raw_data.get("supplier_name", ""),
-                    "type_of_inward_supply": "Inputs",
-                    "document_type": "Invoice",
-                    "document_number": raw_data.get("invoice_number", ""),
-                    "document_date": raw_data.get("invoice_date", ""),
-                    "taxable_value": raw_data.get("taxable_value", "0.00"),
-                    "integrated_tax": raw_data.get("igst_amount", "0.00"),
-                    "central_tax": raw_data.get("cgst_amount", "0.00"),
-                    "state_ut_tax": raw_data.get("sgst_amount", "0.00"),
-                    "cess": raw_data.get("cess_amount", "0.00"),
-                    "buyer_gstin": raw_data.get("buyer_gstin", ""),
-                    "place_of_supply": raw_data.get("place_of_supply", ""),
-                    "grand_total": raw_data.get("grand_total", "0.00"),
-                    "confidence": raw_data.get("confidence", {"overall": 0.95}),
-                    "source_file": raw_data.get("source_file", ""),
-                    "return_period": "06-2026",
-                    "line_items": raw_data.get("line_items", []),
-                    "warnings": [],
-                    "extracted_at": datetime.utcnow().isoformat() + "Z",
-                }
-                record["id"] = fallback_save_to_purchase_registry(record)
+            return jsonify({"error": vlm_warning or "VLM OCR extraction failed. Please check backend logs."}), 500
 
         # Execute rules audit checks
         rule_flags = run_rule_checks(record)

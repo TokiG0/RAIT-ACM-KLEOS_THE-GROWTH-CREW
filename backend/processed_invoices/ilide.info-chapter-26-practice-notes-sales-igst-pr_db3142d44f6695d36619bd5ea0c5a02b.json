@@ -1,0 +1,54 @@
+{
+  "gstin_of_supplier": "039RDEK14TR91ZC",
+  "trade_legal_name": "GREEN TRADING COMPANY",
+  "type_of_inward_supply": "Inputs",
+  "document_type": "Bill of Supply",
+  "document_number": "026",
+  "document_date": "01-Jan-2026",
+  "taxable_value": "13514.00",
+  "integrated_tax": "0.00",
+  "central_tax": "25.00",
+  "state_ut_tax": "25.00",
+  "cess": "0.00",
+  "buyer_gstin": "",
+  "place_of_supply": "AMRITSAR, PUNJAB",
+  "grand_total": "13864.00",
+  "confidence": {
+    "overall": 0.9
+  },
+  "source_file": "ilide.info-chapter-26-practice-notes-sales-igst-pr_db3142d44f6695d36619bd5ea0c5a02b.pdf",
+  "return_period": "01-2026",
+  "line_items": [
+    {
+      "sr": "1",
+      "description": "PVC PANEL",
+      "hsn_code": "3929000",
+      "quantity": "80",
+      "unit": "SQFT",
+      "rate": "18%",
+      "taxable_amount": "5683.50",
+      "gst_rate": "18%",
+      "gst_amount": "1889.45",
+      "total": "5683.50"
+    },
+    {
+      "sr": "2",
+      "description": "PVC COUNTERS",
+      "hsn_code": "3929000",
+      "quantity": "10",
+      "unit": "SQFT",
+      "rate": "18%",
+      "taxable_amount": "8875.00",
+      "gst_rate": "18%",
+      "gst_amount": "1607.50",
+      "total": "8875.00"
+    }
+  ],
+  "warnings": [
+    "Line items GST sum (3496.95) does not match header GST total (50.00) — possible OCR error.",
+    "GSTIN of supplier is missing or invalid.",
+    "Line items taxable value sum (14558.50) does not match header taxable value (13514.00) — possible OCR error."
+  ],
+  "extracted_at": "2026-06-19T23:44:14.605471Z",
+  "id": 15
+}

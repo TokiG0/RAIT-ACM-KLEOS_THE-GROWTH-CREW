@@ -1,43 +1,6 @@
 [
   {
-    "id": 13,
-    "gstin_of_supplier": "2AHDE7487RE5RT4",
-    "trade_legal_name": "GUJARAT FREIGHT TOOLS",
-    "type_of_inward_supply": "Inputs",
-    "document_type": "Bill of Supply",
-    "document_number": "201",
-    "document_date": "05-Mar-2026",
-    "taxable_value": 3380.0,
-    "integrated_tax": 0.0,
-    "central_tax": 606.4,
-    "state_ut_tax": 606.4,
-    "cess": 0.0,
-    "buyer_gstin": "",
-    "place_of_supply": "Delhi (CST)",
-    "grand_total": 3988.0,
-    "confidence_score": 0.9,
-    "source_file": "invoicepdf.pdf",
-    "return_period": "03-2026",
-    "needs_review": 0,
-    "raw_json": "{\"supplierName\": \"GUJARAT FREIGHT TOOLS\", \"supplierGstin\": \"2AHDE7487RE5RT4\", \"invoiceNumber\": \"201\", \"invoiceDate\": \"05-Mar-2026\", \"hsnCode\": \"82030200\", \"taxableValue\": 3380, \"cgst\": 606.4, \"sgst\": 606.4, \"igst\": 0, \"totalAmount\": 3988, \"line_items\": [{\"sr\": \"1\", \"description\": \"Goods / Supplies\", \"hsn_code\": \"82030200\", \"taxable_amount\": \"3380\", \"gst_rate\": \"18%\", \"gst_amount\": \"1212.8\", \"total\": \"3988\"}]}",
-    "created_at": "2026-06-19 22:07:10",
-    "line_items": [
-      {
-        "sr_no": "1",
-        "description": "Goods / Supplies",
-        "hsn_code": "82030200",
-        "quantity": "",
-        "unit": "",
-        "rate": "",
-        "taxable_amount": "3380",
-        "gst_rate": "18%",
-        "gst_amount": "1212.8",
-        "total": "3988"
-      }
-    ]
-  },
-  {
-    "id": 14,
+    "id": 16,
     "gstin_of_supplier": "27BBBCK0124P1Z9",
     "trade_legal_name": "TGC Pvt LTD.",
     "type_of_inward_supply": "Inputs",
@@ -53,11 +16,11 @@
     "place_of_supply": "Navi Mumbai, Maharashtra, 400078",
     "grand_total": 205000.0,
     "confidence_score": 0.9,
-    "source_file": "WhatsApp Image 2026-06-19 at 7.38.36 PM.jpeg",
+    "source_file": "WhatsApp Image 2026-06-20 at 5.02.06 AM.jpeg",
     "return_period": "",
     "needs_review": 1,
-    "raw_json": "{\"gstin_of_supplier\": \"27BBBCK0124P1Z9\", \"trade_legal_name\": \"TGC Pvt LTD.\", \"type_of_inward_supply\": \"Inputs\", \"document_type\": \"Invoice\", \"document_number\": \"INV-2026-0172-V\", \"document_date\": \"\", \"taxable_value\": \"205000.00\", \"integrated_tax\": \"0.00\", \"central_tax\": \"0.00\", \"state_ut_tax\": \"0.00\", \"cess\": \"0.00\", \"buyer_gstin\": \"29AAACA1234C0125\", \"place_of_supply\": \"Navi Mumbai, Maharashtra, 400078\", \"grand_total\": \"205000.00\", \"confidence\": {\"overall\": 0.9}, \"source_file\": \"WhatsApp Image 2026-06-19 at 7.38.36 PM.jpeg\", \"return_period\": \"\", \"line_items\": [{\"sr\": \"1\", \"description\": \"Enterprise API License (Annual)\", \"hsn_code\": \"0410\", \"quantity\": \"1\", \"unit\": \"120000\", \"rate\": \"18%\", \"taxable_amount\": \"187000.00\", \"gst_rate\": \"0%\", \"gst_amount\": \"0.00\", \"total\": \"187000.00\"}, {\"sr\": \"2\", \"description\": \"ML Model FT\", \"hsn_code\": \"7117\", \"quantity\": \"1\", \"unit\": \"85000\", \"rate\": \"18%\", \"taxable_amount\": \"153000.00\", \"gst_rate\": \"0%\", \"gst_amount\": \"0.00\", \"total\": \"153000.00\"}], \"warnings\": [\"Document date is missing.\", \"Line items taxable value sum (340000.00) does not match header taxable value (205000.00) — possible OCR error.\"], \"extracted_at\": \"2026-06-19T22:08:14.545943Z\"}",
-    "created_at": "2026-06-19 22:08:14",
+    "raw_json": "{\"gstin_of_supplier\": \"27BBBCK0124P1Z9\", \"trade_legal_name\": \"TGC Pvt LTD.\", \"type_of_inward_supply\": \"Inputs\", \"document_type\": \"Invoice\", \"document_number\": \"INV-2026-0172-V\", \"document_date\": \"\", \"taxable_value\": \"205000.00\", \"integrated_tax\": \"0.00\", \"central_tax\": \"0.00\", \"state_ut_tax\": \"0.00\", \"cess\": \"0.00\", \"buyer_gstin\": \"29AAACA1234C0125\", \"place_of_supply\": \"Navi Mumbai, Maharashtra, 400078\", \"grand_total\": \"205000.00\", \"confidence\": {\"overall\": 0.9}, \"source_file\": \"WhatsApp Image 2026-06-20 at 5.02.06 AM.jpeg\", \"return_period\": \"\", \"line_items\": [{\"sr\": \"1\", \"description\": \"Enterprise API License (Annual)\", \"hsn_code\": \"0410\", \"quantity\": \"1\", \"unit\": \"120000\", \"rate\": \"18%\", \"taxable_amount\": \"187000.00\", \"gst_rate\": \"0%\", \"gst_amount\": \"0.00\", \"total\": \"187000.00\"}, {\"sr\": \"2\", \"description\": \"ML Model FT\", \"hsn_code\": \"7117\", \"quantity\": \"1\", \"unit\": \"85000\", \"rate\": \"18%\", \"taxable_amount\": \"153000.00\", \"gst_rate\": \"0%\", \"gst_amount\": \"0.00\", \"total\": \"153000.00\"}], \"warnings\": [\"Document date is missing.\", \"Line items taxable value sum (340000.00) does not match header taxable value (205000.00) — possible OCR error.\"], \"extracted_at\": \"2026-06-20T00:54:00.120692Z\"}",
+    "created_at": "2026-06-20 00:54:00",
     "line_items": [
       {
         "sr_no": "1",

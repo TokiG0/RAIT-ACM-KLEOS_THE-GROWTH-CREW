@@ -194,7 +194,7 @@ export default function LoginPage({ currentLang, onChangeLang, onLoginSuccess, o
                     className="edit-phone-btn" 
                     onClick={() => { setStep(1); setShowSmsBanner(false); }}
                   >
-                    Change Number (+91 {mobileNumber})
+                    Change Client Number (+91 {mobileNumber})
                   </button>
                 </div>
 
@@ -226,7 +226,7 @@ export default function LoginPage({ currentLang, onChangeLang, onLoginSuccess, o
 
           <div className="login-privacy-badge text-center">
             <Lock size={12} className="text-green mr-4" />
-            <span className="text-dim text-small">Secure Offline Verification Sandbox</span>
+            <span className="text-dim text-small">Secure OTP Verification</span>
           </div>
         </div>
       </div>

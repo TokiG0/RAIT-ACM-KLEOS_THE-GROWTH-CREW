@@ -33,7 +33,7 @@ export function isDateWithinTolerance(dateStr1, dateStr2, toleranceDays = 5) {
   const d1 = new Date(dateStr1);
   const d2 = new Date(dateStr2);
   
-  if (isNaN(d1.getTime()) || !isNaN(d2.getTime())) {
+  if (!isNaN(d1.getTime()) && !isNaN(d2.getTime())) {
     const diffTime = Math.abs(d2 - d1);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays <= toleranceDays;
@@ -98,7 +98,7 @@ export function reconcileRecords(purchaseInvoices, gstr2bRecords) {
     
     if (match) {
       // We found a match! Check for discrepancies
-      const hsnMismatch = String(purchase.hsnCode).substring(0, 2) !== String(match.hsnCode).substring(0, 2);
+      const hsnMismatch = String(purchase.hsnCode).substring(0, 4) !== String(match.hsnCode).substring(0, 4);
       // Wait, let's calculate ITC amounts. ITC is CGST + SGST or IGST.
       const purchaseItc = (purchase.cgst || 0) + (purchase.sgst || 0) + (purchase.igst || 0);
       const portalItc = (match.cgst || 0) + (match.sgst || 0) + (match.igst || 0);
@@ -221,9 +221,43 @@ export function reconcileRecords(purchaseInvoices, gstr2bRecords) {
       atRiskItc,
       unclaimedItc,
       totalLoss: blockedItc + atRiskItc,
-      reconciliationScore: purchaseInvoices.length > 0 
+      reconciliationScore: purchaseInvoices.length > 0
         ? Math.round((reconciled.filter(r => r.status === "MATCHED").length / purchaseInvoices.length) * 100)
         : 100
     }
   };
+}
+
+/**
+ * Computes per-supplier reliability scores from reconciled results.
+ * Returns suppliers sorted worst-first (riskiest at top).
+ */
+export function computeSupplierScores(reconciledData) {
+  const supplierMap = {};
+
+  reconciledData.forEach(item => {
+    const invoice = item.purchase || item.gstr;
+    if (!invoice) return;
+
+    const gstin = (item.purchase?.supplierGstin || item.gstr?.supplierGstin || '').toUpperCase();
+    const name = item.purchase?.supplierName || item.gstr?.supplierName || item.gstr?.tradeLegalName || 'Unknown';
+
+    if (!supplierMap[gstin]) {
+      supplierMap[gstin] = { gstin, name, total: 0, matched: 0, defaults: 0, mismatches: 0, unclaimed: 0, itcSafe: 0, itcRisk: 0 };
+    }
+
+    const s = supplierMap[gstin];
+    s.total++;
+
+    if (item.status === 'MATCHED') { s.matched++; s.itcSafe += item.financialImpact || 0; }
+    else if (item.status === 'SUPPLIER_DEFAULT' || item.status === 'MISMATCH_GSTIN') { s.defaults++; s.itcRisk += item.financialImpact || 0; }
+    else if (item.status === 'MISMATCH_HSN' || item.status === 'MISMATCH_AMOUNT') { s.mismatches++; s.itcRisk += item.financialImpact || 0; }
+    else if (item.status === 'UNCLAIMED') { s.unclaimed++; }
+  });
+
+  return Object.values(supplierMap).map(s => ({
+    ...s,
+    score: Math.max(0, Math.round(100 - (s.defaults * 35) - (s.mismatches * 15))),
+    riskLevel: s.defaults > 0 ? 'HIGH' : s.mismatches > 0 ? 'MEDIUM' : 'LOW',
+  })).sort((a, b) => a.score - b.score);
 }
