@@ -3,7 +3,7 @@ import { Camera, FileText, Check, AlertCircle, RefreshCw } from 'lucide-react';
 import { TRANSLATIONS } from '../utils/translations';
 import { uploadInvoice } from '../utils/api';
 
-export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backendActive }) {
+export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backendActive, activeClientGstin }) {
   const t = TRANSLATIONS[currentLang];
   const ocrMode = 'vlm'; // local Qwen VLM is the only engine
   const [scanning, setScanning] = useState(false);
@@ -42,7 +42,7 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
     }, 2500);
 
     try {
-      const response = await uploadInvoice(file, ocrMode);
+      const response = await uploadInvoice(file, ocrMode, activeClientGstin);
       clearInterval(stepInterval);
       setScanStep(maxSteps);
       
@@ -179,6 +179,7 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
+              buyer_gstin: activeClientGstin,
               supplierName: scannedBill.supplierName,
               supplierGstin: scannedBill.supplierGstin,
               invoiceNumber: scannedBill.invoiceNumber,
@@ -210,6 +211,7 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
+              buyer_gstin: activeClientGstin,
               supplierName: scannedBill.supplierName,
               supplierGstin: scannedBill.supplierGstin,
               invoiceNumber: scannedBill.invoiceNumber,

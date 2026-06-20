@@ -4059,4 +4059,76 @@ h1, h2, h3, h4, h5, h6 {
   to { transform: scale(1); opacity: 1; }
 }
 
+/* Client Switcher Sidebar Dropdown */
+.client-switcher-sidebar-container {
+  margin-bottom: 24px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.client-select-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.client-select-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.client-select-dropdown {
+  width: 100%;
+  padding: 8px 24px 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+/* Let's style the options to make sure they are readable in light/dark themes */
+.client-select-dropdown option {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+}
+
+.client-select-dropdown:hover {
+  border-color: var(--primary);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+:root[data-theme="light"] .client-select-dropdown {
+  background: rgba(255, 255, 255, 0.9);
+}
+:root[data-theme="light"] .client-select-dropdown:hover {
+  background: #ffffff;
+}
+
+/* Custom chevron icon indicator for select */
+.client-select-wrapper::after {
+  content: "▾";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+  font-size: 12px;
+}
+
 

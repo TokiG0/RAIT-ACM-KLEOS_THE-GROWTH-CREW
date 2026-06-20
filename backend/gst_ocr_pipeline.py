@@ -1401,7 +1401,8 @@ def process_invoice_to_registry(file_source, filename_hint: str = None,
                                  type_of_inward_supply: str = None,
                                  save_to_db: bool = True, db_path=DB_PATH,
                                  skip_if_seen: bool = True,
-                                 update_existing: bool = False) -> dict:
+                                 update_existing: bool = False,
+                                 buyer_gstin: str = None) -> dict:
     """
     Full pipeline for one scanned/uploaded invoice:
         invoice (file / bytes / upload stream)
@@ -1429,6 +1430,7 @@ def process_invoice_to_registry(file_source, filename_hint: str = None,
             the registry (same GSTIN + document number + document type) is left
             untouched — duplicates never overwrite stored data. Set True to
             allow a re-scan to overwrite the existing row.
+        buyer_gstin: Client GSTIN to associate with this invoice record.
     """
     file_hash = file_data = None
 
@@ -1441,6 +1443,9 @@ def process_invoice_to_registry(file_source, filename_hint: str = None,
         if cached:
             print(f"[SKIP] already parsed (SHA-256 match) -> returning cached record "
                   f"(id={cached.get('id')}, doc={cached.get('document_number', '?')})")
+            if buyer_gstin and cached.get("buyer_gstin") != buyer_gstin:
+                cached["buyer_gstin"] = buyer_gstin
+                save_to_purchase_registry(cached, db_path=db_path, update_existing=True)
             return cached
         # For streams: _file_sha256 consumed the bytes; forward the materialized
         # copy to extract_invoice so we don't try to seek the exhausted stream.
@@ -1449,6 +1454,8 @@ def process_invoice_to_registry(file_source, filename_hint: str = None,
 
     raw = extract_invoice(file_source, filename_hint)
     record = to_purchase_registry(raw, type_of_inward_supply=type_of_inward_supply)
+    if buyer_gstin:
+        record["buyer_gstin"] = buyer_gstin
 
     if save_to_db:
         record["id"] = save_to_purchase_registry(

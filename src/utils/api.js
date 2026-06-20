@@ -32,10 +32,11 @@ export async function checkBackendHealth() {
  * @param {File} file - The file object from input change
  * @param {string} ocrMode - The chosen OCR mode ('sandbox' or 'vlm')
  */
-export async function uploadInvoice(file, ocrMode = 'sandbox') {
+export async function uploadInvoice(file, ocrMode = 'sandbox', buyerGstin = '') {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('ocr_mode', ocrMode);
+  formData.append('buyer_gstin', buyerGstin);
 
   const res = await fetch(`${API_BASE}/upload-invoice`, {
     method: 'POST',

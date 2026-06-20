@@ -267,11 +267,13 @@ def upload_invoice():
         if ocr_mode == 'vlm' or (ocr_mode == 'auto' and has_vlm):
             if has_vlm and pipeline:
                 try:
+                    buyer_gstin = request.form.get('buyer_gstin', '')
                     record = pipeline.process_invoice_to_registry(
                         saved_path,
                         filename_hint=file.filename,
                         save_to_db=True,
-                        db_path=DB_PATH
+                        db_path=DB_PATH,
+                        buyer_gstin=buyer_gstin
                     )
                 except Exception as vlm_err:
                     print(f"[VLM ERROR] Qwen local model failed: {vlm_err}")
@@ -472,6 +474,7 @@ def create_purchase_record():
         return_period = datetime.now().strftime("%m-%Y")
 
     record = {
+        "buyer_gstin": data.get("buyer_gstin", "09AAAAC4451M1Z1"),
         "gstin_of_supplier": gstin_of_supplier,
         "trade_legal_name": trade_legal_name,
         "type_of_inward_supply": "Inputs",
@@ -568,6 +571,7 @@ def update_purchase_record(record_id):
         rule_flags = run_rule_checks(audit_record)
         warnings_list = [f["description"] for f in rule_flags] if rule_flags else []
         needs_review = 1 if (warnings_list or to_float(data.get("confidence_score", 1.0)) < 0.7) else 0
+        buyer_gstin = data.get("buyer_gstin", "09AAAAC4451M1Z1")
         
         conn.execute("""
             UPDATE purchase_registry SET
@@ -582,6 +586,7 @@ def update_purchase_record(record_id):
                 cess = ?,
                 grand_total = ?,
                 needs_review = ?,
+                buyer_gstin = ?,
                 raw_json = ?
             WHERE id = ?
         """, (
@@ -596,6 +601,7 @@ def update_purchase_record(record_id):
             cess,
             grand_total,
             needs_review,
+            buyer_gstin,
             json.dumps(data),
             record_id
         ))

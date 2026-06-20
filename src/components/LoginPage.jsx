@@ -15,6 +15,7 @@ import ThemeToggle from './ThemeToggle';
 export default function LoginPage({ currentLang, onChangeLang, onLoginSuccess, onNavigateToLanding, theme, onToggleTheme }) {
   const t = TRANSLATIONS[currentLang];
   
+  const [role, setRole] = useState('user'); // 'user' or 'accountant'
   const [mobileNumber, setMobileNumber] = useState('');
   const [step, setStep] = useState(1); // 1 = Phone Number, 2 = OTP Code
   const [otpVal, setOtpVal] = useState(['', '', '', '']);
@@ -24,7 +25,15 @@ export default function LoginPage({ currentLang, onChangeLang, onLoginSuccess, o
 
   const otpRefs = [useRef(null), useRef(null), useRef(null), useRef(null)];
 
-  // Reset errors when switching states
+  // Reset errors and fields when switching states or roles
+  useEffect(() => {
+    setMobileNumber('');
+    setStep(1);
+    setOtpVal(['', '', '', '']);
+    setErrorMsg('');
+    setShowSmsBanner(false);
+  }, [role]);
+
   useEffect(() => {
     setErrorMsg('');
   }, [step, mobileNumber]);
@@ -106,7 +115,7 @@ export default function LoginPage({ currentLang, onChangeLang, onLoginSuccess, o
     }
 
     // Success: Login user
-    onLoginSuccess();
+    onLoginSuccess(role);
   };
 
   // Auto fill helper
@@ -149,8 +158,62 @@ export default function LoginPage({ currentLang, onChangeLang, onLoginSuccess, o
         <div className="login-card glass-panel">
           <div className="login-card-branding text-center">
             <div className="login-logo-icon">P</div>
-            <h2>{t.loginCardTitle}</h2>
-            <p className="text-secondary">{t.loginCardSubtitle}</p>
+            
+            {/* Role Select Tabs */}
+            <div className="login-role-tabs" style={{
+              display: 'flex',
+              gap: '6px',
+              margin: '16px auto 20px auto',
+              background: 'rgba(255, 255, 255, 0.03)',
+              padding: '4px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              maxWidth: '320px'
+            }}>
+              <button
+                type="button"
+                onClick={() => setRole('user')}
+                className={`login-role-tab-btn ${role === 'user' ? 'active' : ''}`}
+                style={{
+                  flex: 1,
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  borderRadius: '6px',
+                  fontWeight: '600',
+                  border: 'none',
+                  background: role === 'user' ? 'var(--primary)' : 'transparent',
+                  color: role === 'user' ? '#FFFFFF' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {t.loginRoleUser}
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole('accountant')}
+                className={`login-role-tab-btn ${role === 'accountant' ? 'active' : ''}`}
+                style={{
+                  flex: 1,
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  borderRadius: '6px',
+                  fontWeight: '600',
+                  border: 'none',
+                  background: role === 'accountant' ? 'var(--primary)' : 'transparent',
+                  color: role === 'accountant' ? '#FFFFFF' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {t.loginRoleAccountant}
+              </button>
+            </div>
+
+            <h2>{role === 'user' ? (t.loginCardUserTitle || t.loginCardTitle) : t.loginCardAccountantTitle}</h2>
+            <p className="text-secondary" style={{ minHeight: '34px', fontSize: '13px' }}>
+              {role === 'user' ? (t.loginCardUserSubtitle || t.loginCardSubtitle) : t.loginCardAccountantSubtitle}
+            </p>
           </div>
 
           {errorMsg && (
