@@ -98,7 +98,7 @@ INFER_MIN_PIXELS =  32 * 28 * 28   # 25,088 px   (avoids forced upscaling of tin
 # A real invoice with 8-10 line items can reach 500-600 tokens.
 # 600 is a safe ceiling that covers most invoices while saving ~1s vs 900.
 # Raise to 900 only if you see truncated output on dense multi-item invoices.
-MAX_NEW_TOKENS = 600
+MAX_NEW_TOKENS = 900
 
 # SDPA backend priority — avoids slow MATH fallback
 _SDP_BACKENDS = [SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
@@ -293,7 +293,29 @@ USER_PROMPT = """Extract from this invoice image. Return JSON exactly:
     {"sr":"","description":"","hsn_code":"","quantity":"","unit":"",
      "rate":"","taxable_amount":"","gst_rate":"","gst_amount":"","total":""}
   ],
-  "confidence": {"overall": 0.0}
+  "confidence": {"overall": 0.0},
+  "field_confidence": {
+    "supplier_gstin": 0.0,
+    "supplier_name": 0.0,
+    "invoice_number": 0.0,
+    "invoice_date": 0.0,
+    "taxable_value": 0.0,
+    "grand_total": 0.0,
+    "cgst_amount": 0.0,
+    "sgst_amount": 0.0,
+    "igst_amount": 0.0
+  },
+  "field_bbox": {
+    "supplier_gstin": [0.0, 0.0, 1.0, 0.1],
+    "supplier_name": [0.0, 0.0, 1.0, 0.1],
+    "invoice_number": [0.0, 0.0, 1.0, 0.1],
+    "invoice_date": [0.0, 0.0, 1.0, 0.1],
+    "taxable_value": [0.0, 0.0, 1.0, 0.1],
+    "grand_total": [0.0, 0.0, 1.0, 0.1],
+    "cgst_amount": [0.0, 0.0, 1.0, 0.1],
+    "sgst_amount": [0.0, 0.0, 1.0, 0.1],
+    "igst_amount": [0.0, 0.0, 1.0, 0.1]
+  }
 }
 Rules:
 - GSTIN: 15-char alphanumeric. Fix common OCR error: digit 0 vs letter O.
@@ -301,7 +323,13 @@ Rules:
 - doc_type: one of Tax Invoice / Credit Note / Debit Note / Bill of Supply / Bill of Entry, as printed.
 - HSN codes: 4-8 digits only (not PINs/invoice numbers).
 - Amounts: include decimals e.g. "1177.50". Use "0.00" if a tax type doesn't apply.
-- confidence.overall: your estimate 0-1.
+- confidence.overall: your overall estimate 0-1 of extraction quality.
+- field_confidence: per-field confidence 0-1. Use lower values (e.g. 0.5) for blurry, crumpled,
+  or partially obscured text. Use 0.95+ only when you can read the field clearly and unambiguously.
+- field_bbox: normalized bounding box [x1, y1, x2, y2] (values 0.0-1.0 as fractions of image
+  width/height) for the exact region on the image where each field value appears.
+  x1,y1 = top-left corner; x2,y2 = bottom-right corner. Estimate as tightly as possible around
+  the printed text (not the row/line label, just the value itself).
 - Dates: read invoice_date ONLY from the printed date field — never infer the year from the
   invoice number (e.g. "INV-2020-..." does NOT mean the date year is 2020). Fix common OCR
   digit confusion in year digits: '6' and '0' look alike in print/scan — if the year ends in
@@ -842,8 +870,10 @@ def to_purchase_registry(data: dict, type_of_inward_supply: str = None) -> dict:
         "buyer_gstin":     data.get("buyer_gstin", ""),
         "place_of_supply": data.get("place_of_supply", ""),
         "grand_total":     data.get("grand_total", "0.00"),
-        "confidence":      data.get("confidence", {"overall": 0.0}),
-        "source_file":     data.get("source_file", ""),
+        "confidence":        data.get("confidence", {"overall": 0.0}),
+        "field_confidence":  data.get("field_confidence", {}),
+        "field_bbox":        data.get("field_bbox", {}),
+        "source_file":       data.get("source_file", ""),
         "return_period":   _derive_return_period(data.get("invoice_date", "")),
         "line_items":      data.get("line_items", []),
         "warnings":        warnings_list,

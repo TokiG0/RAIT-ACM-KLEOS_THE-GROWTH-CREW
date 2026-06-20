@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Upload, ScanLine, CheckSquare,
   MessageSquareWarning, BookOpenCheck, LogOut, Sparkles,
   FileSpreadsheet, BarChart2,
-  Users, CalendarDays, ShieldCheck, CreditCard,
+  Users, CalendarDays, ShieldCheck, CreditCard, ClipboardList,
 } from 'lucide-react';
 
 // Component imports
@@ -24,6 +24,7 @@ import SupplierScorecard   from './components/SupplierScorecard';
 import GstCalendar         from './components/GstCalendar';
 import HsnValidator        from './components/HsnValidator';
 import Billing             from './components/Billing';
+import Gstr1View          from './components/Gstr1View';
 
 // Utilities
 import { TRANSLATIONS }    from './utils/translations';
@@ -194,6 +195,7 @@ export default function App() {
     { id: 'import',          icon: <Upload size={18} />,              label: t.tabImport },
     { id: 'upload',          icon: <ScanLine size={18} />,            label: t.tabUpload },
     { id: 'purchaseRegister',icon: <FileSpreadsheet size={18} />,     label: t.tabPurchaseRegister },
+    { id: 'gstr1',           icon: <ClipboardList size={18} />,      label: 'GSTR-1' },
     { id: 'reconciliation',  icon: <CheckSquare size={18} />,         label: t.tabReconciliation },
     { id: 'analytics',       icon: <BarChart2 size={18} />,           label: t.tabAnalytics || 'Analytics' },
     { id: 'suppliers',       icon: <Users size={18} />,               label: t.tabSuppliers || 'Suppliers' },
@@ -323,6 +325,9 @@ export default function App() {
           )}
           {activeTab === 'purchaseRegister' && (
             <PurchaseRegister purchaseRecords={purchaseRecords} reconciledData={reconciledData} currentLang={currentLang} backendActive={backendActive} onDeleteRecord={handleDeletePurchaseRecord} />
+          )}
+          {activeTab === 'gstr1' && (
+            <Gstr1View purchaseRecords={purchaseRecords} backendActive={backendActive} />
           )}
           {activeTab === 'reconciliation' && (
             <Reconciliation reconciledData={reconciledData} currentLang={currentLang} changeTab={setActiveTab} />
