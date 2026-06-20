@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Upload, ScanLine, CheckSquare,
   MessageSquareWarning, BookOpenCheck, LogOut, Sparkles,
   FileSpreadsheet, BarChart2,
-  Users, CalendarDays, ShieldCheck,
+  Users, CalendarDays, ShieldCheck, CreditCard,
 } from 'lucide-react';
 
 // Component imports
@@ -23,6 +23,7 @@ import AnalyticsPanel      from './components/AnalyticsPanel';
 import SupplierScorecard   from './components/SupplierScorecard';
 import GstCalendar         from './components/GstCalendar';
 import HsnValidator        from './components/HsnValidator';
+import Billing             from './components/Billing';
 
 // Utilities
 import { TRANSLATIONS }    from './utils/translations';
@@ -146,6 +147,7 @@ export default function App() {
     { id: 'calendar',        icon: <CalendarDays size={18} />,        label: t.tabCalendar || 'Calendar' },
     { id: 'hsnCheck',        icon: <ShieldCheck size={18} />,         label: t.tabHsnCheck || 'HSN Check' },
     { id: 'actions',         icon: <MessageSquareWarning size={18} />, label: t.tabActions },
+    { id: 'billing',         icon: <CreditCard size={18} />,          label: t.tabBilling || 'Billing' },
     { id: 'help',            icon: <BookOpenCheck size={18} />,       label: t.tabHelp },
   ];
 
@@ -248,6 +250,9 @@ export default function App() {
           )}
           {activeTab === 'actions' && (
             <ActionCenter reconciledData={reconciledData} currentLang={currentLang} />
+          )}
+          {activeTab === 'billing' && (
+            <Billing currentLang={currentLang} actualInvoiceCount={purchaseRecords.length} />
           )}
           {activeTab === 'help' && (
             <EducationHub currentLang={currentLang} />

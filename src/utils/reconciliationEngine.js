@@ -1,6 +1,14 @@
 // Core Reconciliation Engine for PocketCA
 // Handles fuzzy matching of invoice numbers, dates, and amounts
 
+export function safeParseFloat(val) {
+  if (val === undefined || val === null) return 0;
+  if (typeof val === 'number') return val;
+  const cleaned = String(val).replace(/[^0-9.-]/g, '');
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
 /**
  * Standardizes an invoice number for fuzzy comparison:
  * - Converts to lowercase
@@ -100,8 +108,8 @@ export function reconcileRecords(purchaseInvoices, gstr2bRecords) {
       // We found a match! Check for discrepancies
       const hsnMismatch = String(purchase.hsnCode).substring(0, 4) !== String(match.hsnCode).substring(0, 4);
       // Wait, let's calculate ITC amounts. ITC is CGST + SGST or IGST.
-      const purchaseItc = (purchase.cgst || 0) + (purchase.sgst || 0) + (purchase.igst || 0);
-      const portalItc = (match.cgst || 0) + (match.sgst || 0) + (match.igst || 0);
+      const purchaseItc = safeParseFloat(purchase.cgst) + safeParseFloat(purchase.sgst) + safeParseFloat(purchase.igst);
+      const portalItc = safeParseFloat(match.cgst) + safeParseFloat(match.sgst) + safeParseFloat(match.igst);
       const amountMismatch = Math.abs(purchaseItc - portalItc) > 1.0; // Tolerance of ₹1
       
       let status = "MATCHED";
@@ -151,7 +159,7 @@ export function reconcileRecords(purchaseInvoices, gstr2bRecords) {
       });
     } else {
       // No match found in GSTR-2B -> Supplier Default!
-      const purchaseItc = (purchase.cgst || 0) + (purchase.sgst || 0) + (purchase.igst || 0);
+      const purchaseItc = safeParseFloat(purchase.cgst) + safeParseFloat(purchase.sgst) + safeParseFloat(purchase.igst);
       atRiskItc += purchaseItc;
       
       // Let's check if the supplier uploaded under a different GSTIN
@@ -195,7 +203,7 @@ export function reconcileRecords(purchaseInvoices, gstr2bRecords) {
   
   // 3. Process remaining unmatched records in GSTR-2B -> Unclaimed ITC!
   const unclaimedList = unmatchedGstr2b.map(gstr => {
-    const portalItc = (gstr.cgst || 0) + (gstr.sgst || 0) + (gstr.igst || 0);
+    const portalItc = safeParseFloat(gstr.cgst) + safeParseFloat(gstr.sgst) + safeParseFloat(gstr.igst);
     unclaimedItc += portalItc;
     
     return {

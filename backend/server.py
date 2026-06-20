@@ -414,6 +414,120 @@ def get_registry():
     except Exception as err:
         return jsonify({"error": f"Database read error: {str(err)}"}), 500
 
+@app.route('/api/purchase-registry', methods=['POST'])
+def create_purchase_record():
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+        
+    trade_legal_name = data.get("supplierName") or data.get("trade_legal_name", "")
+    gstin_of_supplier = data.get("supplierGstin") or data.get("gstin_of_supplier", "")
+    document_number = data.get("invoiceNumber") or data.get("document_number", "")
+    document_date = data.get("invoiceDate") or data.get("document_date", "")
+    
+    if not gstin_of_supplier or not document_number:
+        return jsonify({"error": "Supplier GSTIN and Invoice Number are required"}), 400
+        
+    def to_float(v):
+        try: return float(v)
+        except: return 0.0
+        
+    taxable_value = to_float(data.get("taxableValue") or data.get("taxable_value", 0))
+    central_tax = to_float(data.get("cgst") or data.get("central_tax", 0))
+    state_ut_tax = to_float(data.get("sgst") or data.get("state_ut_tax", 0))
+    integrated_tax = to_float(data.get("igst") or data.get("integrated_tax", 0))
+    cess = to_float(data.get("cess", 0))
+    grand_total = to_float(data.get("totalAmount") or data.get("grand_total", 0))
+    
+    # Run audit rules
+    audit_record = {
+        "supplier_gstin": gstin_of_supplier,
+        "buyer_gstin": data.get("buyer_gstin", "09AAAAC4451M1Z1"),
+        "taxable_value": taxable_value,
+        "central_tax": central_tax,
+        "state_ut_tax": state_ut_tax,
+        "integrated_tax": integrated_tax,
+        "grand_total": grand_total
+    }
+    
+    warnings_list = []
+    try:
+        rule_flags = run_rule_checks(audit_record)
+        warnings_list = [f["description"] for f in rule_flags] if rule_flags else []
+    except Exception as e:
+        print(f"[WARNING] Run rules failed: {e}")
+
+    needs_review = 1 if warnings_list else 0
+    
+    # Derive return period
+    return_period = ""
+    if document_date:
+        for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
+            try:
+                return_period = datetime.strptime(document_date.strip(), fmt).strftime("%m-%Y")
+                break
+            except ValueError:
+                continue
+    if not return_period:
+        return_period = datetime.now().strftime("%m-%Y")
+
+    record = {
+        "gstin_of_supplier": gstin_of_supplier,
+        "trade_legal_name": trade_legal_name,
+        "type_of_inward_supply": "Inputs",
+        "document_type": "Invoice",
+        "document_number": document_number,
+        "document_date": document_date,
+        "taxable_value": taxable_value,
+        "integrated_tax": integrated_tax,
+        "central_tax": central_tax,
+        "state_ut_tax": state_ut_tax,
+        "cess": cess,
+        "grand_total": grand_total,
+        "confidence_score": 1.0,
+        "source_file": "Manual Entry",
+        "return_period": return_period,
+        "needs_review": needs_review,
+        "warnings": warnings_list,
+        "line_items": data.get("line_items") or [
+            {
+                "sr": "1",
+                "description": "Goods / Supplies",
+                "hsn_code": data.get("hsnCode", "0000"),
+                "taxable_amount": str(taxable_value),
+                "gst_rate": str(data.get("gstRate", 18)) + "%",
+                "gst_amount": str(central_tax + state_ut_tax + integrated_tax),
+                "total": str(grand_total)
+            }
+        ]
+    }
+    
+    try:
+        if pipeline:
+            record_id = pipeline.save_to_purchase_registry(record, db_path=DB_PATH)
+        else:
+            record_id = fallback_save_to_purchase_registry(record)
+            
+        record["id"] = record_id
+        
+        # After inserting a manual invoice, we should sync/update purchase_registry.json flat file
+        try:
+            processed_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "processed_invoices")
+            os.makedirs(processed_dir, exist_ok=True)
+            combined_path = os.path.join(processed_dir, "purchase_registry.json")
+            if pipeline:
+                all_records = pipeline.get_purchase_registry(db_path=DB_PATH)
+            else:
+                all_records = fallback_get_purchase_registry()
+            with open(combined_path, "w", encoding="utf-8") as f:
+                json.dump(all_records, f, ensure_ascii=False, indent=2)
+        except Exception as comb_err:
+            print(f"[WARNING] Failed to update combined purchase_registry.json: {comb_err}")
+
+        return jsonify(record)
+    except Exception as err:
+        return jsonify({"error": f"Failed to save manual record: {str(err)}"}), 500
+
 @app.route('/api/purchase-registry/<int:record_id>', methods=['PUT'])
 def update_purchase_record(record_id):
     data = request.json

@@ -83,13 +83,57 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
     }
   };
 
+  const handleManualEntryInit = () => {
+    setAdded(false);
+    setUploadingError(null);
+    setUploadedFileUrl(null);
+    setUploadedFileType(null);
+    setScannedBill({
+      id: `manual-${Date.now()}`,
+      supplierName: "",
+      supplierGstin: "",
+      invoiceNumber: "",
+      invoiceDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-'),
+      hsnCode: "",
+      gstRate: 18,
+      taxableValue: 0,
+      cgst: 0,
+      sgst: 0,
+      igst: 0,
+      totalAmount: 0,
+      status: "NEEDS_REVIEW",
+      explanation: "Manually entered invoice. Reconcile to verify compliance.",
+      explanationHi: "मैन्युअल रूप से दर्ज किया गया इनवॉइस। अनुपालन सत्यापित करने के लिए मिलान करें।",
+      explanationHing: "Manually enter kiya hua invoice. Compliance verify karne ke liye match karein."
+    });
+  };
+
   const handleFieldChange = (key, value) => {
     setScannedBill(prev => {
       if (!prev) return null;
       const updated = { ...prev, [key]: value };
       
+      // Auto-calculate CGST, SGST, IGST when taxableValue, gstRate, or supplierGstin changes
+      if (key === 'taxableValue' || key === 'gstRate' || key === 'supplierGstin') {
+        const taxable = parseFloat(updated.taxableValue || 0);
+        const rate = parseFloat(updated.gstRate || 18);
+        const supplierGstin = (updated.supplierGstin || '').trim();
+        const isInterState = supplierGstin && !supplierGstin.startsWith('09');
+        
+        if (isInterState) {
+          updated.igst = parseFloat((taxable * rate / 100).toFixed(2));
+          updated.cgst = 0;
+          updated.sgst = 0;
+        } else {
+          const halfTax = parseFloat((taxable * rate / 200).toFixed(2));
+          updated.cgst = halfTax;
+          updated.sgst = halfTax;
+          updated.igst = 0;
+        }
+      }
+
       // Auto-recalculate totals if amounts are edited
-      if (key === 'taxableValue' || key === 'cgst' || key === 'sgst' || key === 'igst') {
+      if (key === 'taxableValue' || key === 'cgst' || key === 'sgst' || key === 'igst' || key === 'gstRate') {
         const taxable = parseFloat(updated.taxableValue || 0);
         const cgst = parseFloat(updated.cgst || 0);
         const sgst = parseFloat(updated.sgst || 0);
@@ -103,60 +147,125 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
   const handleAddToPurchases = async () => {
     if (!scannedBill) return;
 
-    if (backendActive && scannedBill.id && !String(scannedBill.id).startsWith('scanned-')) {
+    // Form validations
+    if (!scannedBill.invoiceNumber || !scannedBill.invoiceNumber.trim()) {
+      setUploadingError("Invoice number is required.");
+      return;
+    }
+    if (!scannedBill.supplierGstin || !scannedBill.supplierGstin.trim()) {
+      setUploadingError("Supplier GSTIN is required.");
+      return;
+    }
+    if (scannedBill.supplierGstin.trim().length !== 15) {
+      setUploadingError("Supplier GSTIN must be exactly 15 characters.");
+      return;
+    }
+    if (!scannedBill.supplierName || !scannedBill.supplierName.trim()) {
+      setUploadingError("Supplier Name is required.");
+      return;
+    }
+
+    setUploadingError(null);
+
+    if (backendActive) {
       try {
-        // Confirm manual changes to SQLite DB before adding to React purchases list
-        const response = await fetch(`http://localhost:5000/api/purchase-registry/${scannedBill.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            supplierName: scannedBill.supplierName,
-            supplierGstin: scannedBill.supplierGstin,
-            invoiceNumber: scannedBill.invoiceNumber,
-            invoiceDate: scannedBill.invoiceDate,
-            hsnCode: scannedBill.hsnCode,
-            taxableValue: scannedBill.taxableValue,
-            cgst: scannedBill.cgst,
-            sgst: scannedBill.sgst,
-            igst: scannedBill.igst,
-            totalAmount: scannedBill.totalAmount,
-            line_items: [
-              {
-                sr: "1",
-                description: "Goods / Supplies",
-                hsn_code: scannedBill.hsnCode,
-                taxable_amount: String(scannedBill.taxableValue),
-                gst_rate: String(scannedBill.gstRate) + "%",
-                gst_amount: String(scannedBill.cgst + scannedBill.sgst + scannedBill.igst),
-                total: String(scannedBill.totalAmount)
-              }
-            ]
-          })
-        });
+        const isNewManual = String(scannedBill.id).startsWith('manual-') || String(scannedBill.id).startsWith('scanned-');
+        
+        let response;
+        if (isNewManual) {
+          response = await fetch(`http://localhost:5000/api/purchase-registry`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              supplierName: scannedBill.supplierName,
+              supplierGstin: scannedBill.supplierGstin,
+              invoiceNumber: scannedBill.invoiceNumber,
+              invoiceDate: scannedBill.invoiceDate,
+              hsnCode: scannedBill.hsnCode,
+              gstRate: scannedBill.gstRate,
+              taxableValue: scannedBill.taxableValue,
+              cgst: scannedBill.cgst,
+              sgst: scannedBill.sgst,
+              igst: scannedBill.igst,
+              totalAmount: scannedBill.totalAmount,
+              line_items: [
+                {
+                  sr: "1",
+                  description: "Goods / Supplies",
+                  hsn_code: scannedBill.hsnCode,
+                  taxable_amount: String(scannedBill.taxableValue),
+                  gst_rate: String(scannedBill.gstRate) + "%",
+                  gst_amount: String(scannedBill.cgst + scannedBill.sgst + scannedBill.igst),
+                  total: String(scannedBill.totalAmount)
+                }
+              ]
+            })
+          });
+        } else {
+          response = await fetch(`http://localhost:5000/api/purchase-registry/${scannedBill.id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              supplierName: scannedBill.supplierName,
+              supplierGstin: scannedBill.supplierGstin,
+              invoiceNumber: scannedBill.invoiceNumber,
+              invoiceDate: scannedBill.invoiceDate,
+              hsnCode: scannedBill.hsnCode,
+              gstRate: scannedBill.gstRate,
+              taxableValue: scannedBill.taxableValue,
+              cgst: scannedBill.cgst,
+              sgst: scannedBill.sgst,
+              igst: scannedBill.igst,
+              totalAmount: scannedBill.totalAmount,
+              line_items: [
+                {
+                  sr: "1",
+                  description: "Goods / Supplies",
+                  hsn_code: scannedBill.hsnCode,
+                  taxable_amount: String(scannedBill.taxableValue),
+                  gst_rate: String(scannedBill.gstRate) + "%",
+                  gst_amount: String(scannedBill.cgst + scannedBill.sgst + scannedBill.igst),
+                  total: String(scannedBill.totalAmount)
+                }
+              ]
+            })
+          });
+        }
 
         if (response.ok) {
           const updated = await response.json();
           const finalBill = {
             ...scannedBill,
+            id: updated.id,
             status: updated.needs_review ? "NEEDS_REVIEW" : "MATCHED",
             explanation: updated.warnings && updated.warnings.length > 0
               ? `Compliance Issues: ${updated.warnings.join('. ')}`
-              : "No compliance issues found. Calculation math balances."
+              : "No compliance issues found. Calculation math balances.",
+            explanationHi: updated.warnings && updated.warnings.length > 0
+              ? `चेतावनी: ${updated.warnings.join('. ')}`
+              : "कोई अनुपालन समस्या नहीं मिली। कर और गणना संतुलित हैं।",
+            explanationHing: updated.warnings && updated.warnings.length > 0
+              ? `Warnings: ${updated.warnings.join('. ')}`
+              : "Koi verification mismatch nahi mila. Safe to claim ITC."
           };
           onAddScannedPurchase(finalBill);
+          setAdded(true);
         } else {
-          onAddScannedPurchase(scannedBill);
+          const errData = await response.json();
+          setUploadingError(errData.error || "Failed to save details to backend database.");
         }
       } catch (err) {
-        console.error("Failed to save edited details in DB:", err);
-        onAddScannedPurchase(scannedBill);
+        console.error("Failed to save details in DB:", err);
+        setUploadingError("Failed to save details to backend database. Please verify connection.");
       }
     } else {
       onAddScannedPurchase(scannedBill);
+      setAdded(true);
     }
-    setAdded(true);
   };
 
   const getStatusClass = (status) => {
@@ -240,6 +349,39 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
             </div>
           )}
 
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            margin: '24px 0',
+            color: 'var(--text-secondary)',
+            fontSize: '11px',
+            fontWeight: '600',
+            letterSpacing: '0.1em'
+          }}>
+            <div style={{ flex: 1, height: '1px', background: 'linear-gradient(to right, transparent, var(--border-color))' }}></div>
+            <span style={{ padding: '0 12px' }}>{currentLang === 'hi' ? 'या' : currentLang === 'hing' ? 'OR' : 'OR'}</span>
+            <div style={{ flex: 1, height: '1px', background: 'linear-gradient(to left, transparent, var(--border-color))' }}></div>
+          </div>
+
+          <button
+            type="button"
+            className="btn-secondary w-100 flex-center btn-manual-entry-trigger"
+            onClick={handleManualEntryInit}
+            style={{
+              gap: '8px',
+              padding: '12px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px dashed var(--primary-dim)',
+              background: 'rgba(var(--primary-rgb), 0.05)',
+              color: 'var(--primary-dim)',
+              fontWeight: '500',
+              transition: 'all 0.2s ease',
+              cursor: 'pointer'
+            }}
+          >
+            <FileText size={18} />
+            <span>{t.btnManualEntry || (currentLang === 'hi' ? 'बिल विवरण स्वयं दर्ज करें' : currentLang === 'hing' ? 'Invoice details manually enter karein' : 'Enter Invoice Details Manually')}</span>
+          </button>
 
         </div>
 
@@ -326,7 +468,75 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
                         </div>
                       </div>
                     )
-                  ) : null}
+                  ) : (
+                    <div style={{
+                      width: '100%',
+                      minHeight: '320px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px dashed var(--border-color)',
+                      background: 'linear-gradient(135deg, rgba(255,255,255,0.01) 0%, rgba(255,255,255,0.03) 100%)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '20px',
+                      textAlign: 'center',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        position: 'absolute',
+                        width: '150px',
+                        height: '150px',
+                        background: 'radial-gradient(circle, var(--primary-glow) 0%, transparent 70%)',
+                        top: '-50px',
+                        right: '-50px',
+                        opacity: 0.5,
+                        pointerEvents: 'none'
+                      }}></div>
+
+                      <FileText size={48} className="text-primary-dim animate-pulse" style={{ marginBottom: '12px' }} />
+                      <h4 style={{ color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: '14px', fontWeight: '600' }}>
+                        {currentLang === 'hi' ? 'मैन्युअल बिल प्रविष्टि' : currentLang === 'hing' ? 'Manual Bill Entry' : 'Manual Invoice Entry'}
+                      </h4>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '11px', margin: '0 0 16px 0', maxWidth: '200px' }}>
+                        {currentLang === 'hi' 
+                          ? 'दाहिनी ओर दिए गए फॉर्म में बिल की जानकारी भरें।' 
+                          : currentLang === 'hing' 
+                          ? 'Right side ke form me bill details fill karein.' 
+                          : 'Fill in the invoice details in the form on the right.'}
+                      </p>
+
+                      <div style={{
+                        width: '100%',
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        borderRadius: '6px',
+                        padding: '12px',
+                        textAlign: 'left',
+                        fontSize: '11px',
+                        fontFamily: 'monospace',
+                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
+                      }}>
+                        <div style={{ borderBottom: '1px dashed rgba(255,255,255,0.1)', paddingBottom: '6px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ fontWeight: 'bold', color: 'var(--primary-dim)' }}>
+                            {scannedBill.supplierName || (currentLang === 'hi' ? '[सप्लायर का नाम]' : currentLang === 'hing' ? '[Supplier Name]' : '[Supplier Name]')}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: 'var(--text-secondary)' }}>
+                          <div>GSTIN: {scannedBill.supplierGstin || '-----------------'}</div>
+                          <div>Invoice #: {scannedBill.invoiceNumber || '--------'}</div>
+                          <div>Date: {scannedBill.invoiceDate || '--------'}</div>
+                          <div>HSN: {scannedBill.hsnCode || '----'}</div>
+                          <div>Rate: {scannedBill.gstRate || 18}%</div>
+                          <div style={{ borderTop: '1px dashed rgba(255,255,255,0.1)', paddingTop: '6px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', color: 'var(--text-primary)' }}>
+                            <span>Total Value:</span>
+                            <span style={{ fontWeight: 'bold' }}>₹{scannedBill.totalAmount || '0.00'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Right Panel: Form Editor or Raw JSON */}
@@ -353,6 +563,24 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
 
                   {resultTab === 'form' ? (
                     <div className="extracted-fields-box" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div className="field-row">
+                        <span className="field-label">{t.supplierNameLabel || 'Supplier Name:'}</span>
+                        <input 
+                          type="text" 
+                          value={scannedBill.supplierName || ''}
+                          onChange={(e) => handleFieldChange('supplierName', e.target.value)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--text-primary)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            textAlign: 'right',
+                            fontSize: '13px',
+                            width: '150px'
+                          }}
+                        />
+                      </div>
                       <div className="field-row">
                         <span className="field-label">{t.invoiceNumLabel}</span>
                         <input 
@@ -441,6 +669,24 @@ export default function InvoiceUpload({ currentLang, onAddScannedPurchase, backe
                             textAlign: 'right',
                             fontSize: '13px',
                             width: '110px'
+                          }}
+                        />
+                      </div>
+                      <div className="field-row">
+                        <span className="field-label">GST Rate (%):</span>
+                        <input 
+                          type="number" 
+                          value={scannedBill.gstRate || 18}
+                          onChange={(e) => handleFieldChange('gstRate', parseFloat(e.target.value) || 0)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--text-primary)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            textAlign: 'right',
+                            fontSize: '13px',
+                            width: '90px'
                           }}
                         />
                       </div>
